@@ -22,7 +22,7 @@ void Ip2_FrictMat_CpmMat_FrictPhys::go(const shared_ptr<Material>& pp1, const sh
 	const shared_ptr<FrictMat>& mat1 = YADE_PTR_CAST<FrictMat>(pp1);
 	const shared_ptr<CpmMat>& mat2 = YADE_PTR_CAST<CpmMat>(pp2);
 	Ip2_FrictMat_FrictMat_FrictPhys().go(mat1,mat2,interaction);
-	TIMING_DELTAS_CHECKPOINT("end of Ip2_FritPhys");
+	TIMING_DELTAS_CHECKPOINT("CpmFrictPhys");
 }
 
 
@@ -32,7 +32,10 @@ CREATE_LOGGER(Ip2_CpmMat_CpmMat_CpmPhys);
 void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared_ptr<Material>& pp2, const shared_ptr<Interaction>& interaction){
 	TIMING_DELTAS_START();
 	// no updates of an already existing contact necessary
-	if (interaction->phys) return;
+	if (interaction->phys) {
+	    TIMING_DELTAS_CHECKPOINT("Ip2_Cpm_Phys");
+            return;
+        }
 	shared_ptr<CpmPhys> cpmPhys(new CpmPhys());
 	interaction->phys = cpmPhys;
 	CpmMat* mat1 = YADE_CAST<CpmMat*>(pp1.get());
@@ -91,7 +94,7 @@ void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared
 
 	// NOTE: some params are not assigned until in Law2_ScGeom_CpmPhys_Cpm, since they need geometry as well; those are:
 	// 	crossSection, kn, ks, refLength
-	TIMING_DELTAS_CHECKPOINT("end of Ip2_CpmPhys");
+	TIMING_DELTAS_CHECKPOINT("Ip2_Cpm_Phys");
 }
 
 
