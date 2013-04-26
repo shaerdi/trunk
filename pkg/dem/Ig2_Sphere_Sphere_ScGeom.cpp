@@ -19,7 +19,9 @@ bool Ig2_Sphere_Sphere_ScGeom::go(	const shared_ptr<Shape>& cm1, const shared_pt
 	if (!c->isReal() && !force) {//don't fast-check distance if geometry will be updated anyway
 		Real penetrationDepthSq=pow(interactionDetectionFactor*(s1->radius+s2->radius),2) - normal.squaredNorm();
 		if (penetrationDepthSq<0) {
-			TIMING_DELTAS_CHECKPOINT("Ig2_Sphere_Sphere_ScGeom");
+	                TIMING_DELTAS_CHECKPOINT("Variable lookup");
+			TIMING_DELTAS_CHECKPOINT("Geom evaluation");
+	                TIMING_DELTAS_CHECKPOINT("Precompute");
 			return false;
 		}
 	}
@@ -28,16 +30,20 @@ bool Ig2_Sphere_Sphere_ScGeom::go(	const shared_ptr<Shape>& cm1, const shared_pt
 	if(!isNew) scm=YADE_PTR_CAST<ScGeom>(c->geom);
 	else { scm=shared_ptr<ScGeom>(new ScGeom()); c->geom=scm; }
 	Real norm=normal.norm(); normal/=norm; // normal is unit vector now
+	TIMING_DELTAS_CHECKPOINT("Variable lookup");
+
 #ifdef YADE_DEBUG
 	if(norm==0) throw runtime_error(("Zero distance between spheres #"+lexical_cast<string>(c->getId1())+" and #"+lexical_cast<string>(c->getId2())+".").c_str());
 #endif
+
 	Real penetrationDepth=s1->radius+s2->radius-norm;
 	scm->contactPoint=se31.position+(s1->radius-0.5*penetrationDepth)*normal;//0.5*(pt1+pt2);
 	scm->penetrationDepth=penetrationDepth;
 	scm->radius1=s1->radius;
 	scm->radius2=s2->radius;
+	TIMING_DELTAS_CHECKPOINT("Geom evaluation");
 	scm->precompute(state1,state2,scene,c,normal,isNew,shift2,avoidGranularRatcheting);
-	TIMING_DELTAS_CHECKPOINT("Ig2_Sphere_Sphere_ScGeom");
+	TIMING_DELTAS_CHECKPOINT("Precompute");
 	return true;
 }
 

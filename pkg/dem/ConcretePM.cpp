@@ -23,6 +23,11 @@ void Ip2_FrictMat_CpmMat_FrictPhys::go(const shared_ptr<Material>& pp1, const sh
 	const shared_ptr<CpmMat>& mat2 = YADE_PTR_CAST<CpmMat>(pp2);
 	Ip2_FrictMat_FrictMat_FrictPhys().go(mat1,mat2,interaction);
 	TIMING_DELTAS_CHECKPOINT("CpmFrictPhys");
+//#ifdef USE_TIMING_DELTAS
+        //bla
+//#else 
+        //hot
+//#endif
 }
 
 
@@ -34,6 +39,9 @@ void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared
 	// no updates of an already existing contact necessary
 	if (interaction->phys) {
 	    TIMING_DELTAS_CHECKPOINT("Ip2_Cpm_Phys");
+	TIMING_DELTAS_CHECKPOINT("a");
+	TIMING_DELTAS_CHECKPOINT("b");
+	TIMING_DELTAS_CHECKPOINT("c");
             return;
         }
 	shared_ptr<CpmPhys> cpmPhys(new CpmPhys());
@@ -95,6 +103,9 @@ void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared
 	// NOTE: some params are not assigned until in Law2_ScGeom_CpmPhys_Cpm, since they need geometry as well; those are:
 	// 	crossSection, kn, ks, refLength
 	TIMING_DELTAS_CHECKPOINT("Ip2_Cpm_Phys");
+	TIMING_DELTAS_CHECKPOINT("a");
+	TIMING_DELTAS_CHECKPOINT("b");
+	TIMING_DELTAS_CHECKPOINT("c");
 }
 
 
@@ -326,7 +337,7 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 		const Real& relKnSoft(this->relKnSoft);
 	#endif
 
-	TIMING_DELTAS_CHECKPOINT("GO A");
+	TIMING_DELTAS_CHECKPOINT("Variable Initialization");
 	
 	epsN = - (-phys->refPD + geom->penetrationDepth) / phys->refLength;
 	epsT = geom->rotate(epsT);
@@ -359,6 +370,8 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 		relResidualStrength = isCohesive? (kappaD<epsCrackOnset? 1. : (1-omega)*(kappaD)/epsCrackOnset) : 0;
 	#endif
 
+	TIMING_DELTAS_CHECKPOINT("Model evaluation");
+
 	sigmaN -= phys->isoPrestress;
 
 	NNAN(kappaD); NNAN(epsFracture); NNAN(omega);
@@ -374,13 +387,15 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 			{ boost::mutex::scoped_lock lock(st2->updateMutex); st2->numBrokenCohesive += 1; /* st2->epsPlBroken += epsPlSum; */ }
 		/* } */
 		scene->interactions->requestErase(I);
+	        TIMING_DELTAS_CHECKPOINT("Calc forces");
+	        TIMING_DELTAS_CHECKPOINT("Save forces");
 		return;
 	} \
 
 	Fn = sigmaN*crossSection; phys->normalForce = -Fn*geom->normal;
 	Fs = sigmaT*crossSection; phys->shearForce = -Fs;
 
-	TIMING_DELTAS_CHECKPOINT("GO B");
+	TIMING_DELTAS_CHECKPOINT("Calc forces");
 
 	Body::id_t id1 = I->getId1();
  	Body::id_t id2 = I->getId2();
@@ -397,7 +412,7 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 		scene->forces.addTorque(id1,(geom->radius1+.5*(phys->refPD-geom->penetrationDepth))*geom->normal.cross(f));
 		scene->forces.addTorque(id2,(geom->radius2+.5*(phys->refPD-geom->penetrationDepth))*geom->normal.cross(f));
 	}
-	TIMING_DELTAS_CHECKPOINT("rest");
+	TIMING_DELTAS_CHECKPOINT("Save forces");
 }
 
 
