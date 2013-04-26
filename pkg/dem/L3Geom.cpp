@@ -63,11 +63,15 @@ CREATE_LOGGER(Ig2_Sphere_Sphere_L3Geom);
 bool Ig2_Sphere_Sphere_L3Geom::genericGo(bool is6Dof, const shared_ptr<Shape>& s1, const shared_ptr<Shape>& s2, const State& state1, const State& state2, const Vector3r& shift2, const bool& force, const shared_ptr<Interaction>& I){
 	// temporary hack only, to not have elastic potential energy in rigid packings with overlapping spheres
 	//if(state1.blockedDOFs==State::DOF_ALL && state2.blockedDOFs==State::DOF_ALL) return false;
+        TIMING_DELTAS_START();
 
 	const Real& r1=s1->cast<Sphere>().radius; const Real& r2=s2->cast<Sphere>().radius;
 	Vector3r relPos=state2.pos+shift2-state1.pos;
 	Real unDistSq=relPos.squaredNorm()-pow(abs(distFactor)*(r1+r2),2);
-	if (unDistSq>0 && !I->isReal() && !force) return false;
+	if (unDistSq>0 && !I->isReal() && !force) {
+            TIMING_DELTAS_CHECKPOINT("goGeom");
+            return false;
+        }
 
 	// contact exists, go ahead
 
@@ -78,6 +82,7 @@ bool Ig2_Sphere_Sphere_L3Geom::genericGo(bool is6Dof, const shared_ptr<Shape>& s
 
 	handleSpheresLikeContact(I,state1,state2,shift2,is6Dof,normal,contPt,uN,r1,r2); 
 
+        TIMING_DELTAS_CHECKPOINT("goGeom");
 	return true;
 
 };
@@ -231,10 +236,11 @@ void Ig2_Sphere_Sphere_L3Geom::handleSpheresLikeContact(const shared_ptr<Interac
 };
 
 bool Ig2_Wall_Sphere_L3Geom::go(const shared_ptr<Shape>& s1, const shared_ptr<Shape>& s2, const State& state1, const State& state2, const Vector3r& shift2, const bool& force, const shared_ptr<Interaction>& I){
+        TIMING_DELTAS_START();
 	if(scene->isPeriodic) throw std::logic_error("Ig2_Wall_Sphere_L3Geom does not handle periodic boundary conditions.");
 	const Real& radius=s2->cast<Sphere>().radius; const int& ax(s1->cast<Wall>().axis); const int& sense(s1->cast<Wall>().sense);
 	Real dist=state2.pos[ax]+shift2[ax]-state1.pos[ax]; // signed "distance" between centers
-	if(!I->isReal() && abs(dist)>radius && !force) { return false; }// wall and sphere too far from each other
+	if(!I->isReal() && abs(dist)>radius && !force) { TIMING_DELTAS_CHECKPOINT("goGeom"); return false; }// wall and sphere too far from each other
 	// contact point is sphere center projected onto the wall
 	Vector3r contPt=state2.pos+shift2; contPt[ax]=state1.pos[ax];
 	Vector3r normal=Vector3r::Zero();
@@ -249,17 +255,22 @@ bool Ig2_Wall_Sphere_L3Geom::go(const shared_ptr<Shape>& s1, const shared_ptr<Sh
 		ostringstream oss; oss<<"Ig2_Wall_Sphere_L3Geom: normal changed from ("<<I->geom->cast<L3Geom>().normal<<" to "<<normal<<" in Wall+Sphere ##"<<I->getId1()<<"+"<<I->getId2()<<" (with Wall.sense=0, a particle might cross the Wall plane, if Δt is too high)"; throw std::logic_error(oss.str().c_str());
 	}
 	handleSpheresLikeContact(I,state1,state2,shift2,/*is6Dof*/false,normal,contPt,uN,/*r1*/0,/*r2*/radius);
-	return true;
+	TIMING_DELTAS_CHECKPOINT("goGeom");
+        return true;
 };
 
 bool Ig2_Facet_Sphere_L3Geom::go(const shared_ptr<Shape>& s1, const shared_ptr<Shape>& s2, const State& state1, const State& state2, const Vector3r& shift2, const bool& force, const shared_ptr<Interaction>& I){
+        TIMING_DELTAS_START();
 	const Facet& facet(s1->cast<Facet>());
 	Real radius=s2->cast<Sphere>().radius;
 	// begin facet-local coordinates
 		Vector3r cogLine=state1.ori.conjugate()*(state2.pos+shift2-state1.pos); // connect centers of gravity
 		Vector3r normal=facet.normal; // trial contact normal
 		Real planeDist=normal.dot(cogLine);
-		if(abs(planeDist)>radius && !I->isReal() && !force) return false; // sphere too far
+		if(abs(planeDist)>radius && !I->isReal() && !force) {
+	            TIMING_DELTAS_CHECKPOINT("goGeom");
+                    return false; // sphere too far
+                }
 		if(planeDist<0){normal*=-1; planeDist*=-1; }
 		Vector3r planarPt=cogLine-planeDist*normal; // project sphere center to the facet plane
 		Vector3r contactPt; // facet's point closes to the sphere
@@ -278,22 +289,25 @@ bool Ig2_Facet_Sphere_L3Geom::go(const shared_ptr<Shape>& s1, const shared_ptr<S
 			default: throw logic_error("Ig2_Facet_Sphere_L3Geom: Nonsense intersection value. (please report bug)");
 		}
 		normal=cogLine-contactPt; // normal is now the contact normal, still in local coords
-		if(!I->isReal() && normal.squaredNorm()>radius*radius && !force) { return false; } // fast test before sqrt
+		if(!I->isReal() && normal.squaredNorm()>radius*radius && !force) { TIMING_DELTAS_CHECKPOINT("goGeom");return false; } // fast test before sqrt
+	            
 		Real dist=normal.norm(); normal/=dist; // normal is unit vector now
 	// end facet-local coordinates
 	normal=state1.ori*normal; // normal is in global coords now
 	handleSpheresLikeContact(I,state1,state2,shift2,/*is6Dof*/false,normal,/*contact pt*/state2.pos+shift2-normal*dist,dist-radius,0,radius);
-	return true;
+	TIMING_DELTAS_CHECKPOINT("goGeom");
+        return true;
 }
 
 void Law2_L3Geom_FrictPhys_ElPerfPl::go(shared_ptr<IGeom>& ig, shared_ptr<IPhys>& ip, Interaction* I){
+        TIMING_DELTAS_START();
 	L3Geom* geom=static_cast<L3Geom*>(ig.get()); FrictPhys* phys=static_cast<FrictPhys*>(ip.get());
 
 	// compute force
 	Vector3r& localF(geom->F);
 	localF=geom->relU().cwiseProduct(Vector3r(phys->kn,phys->ks,phys->ks));
 	// break if necessary
-	if(localF[0]>0 && !noBreak){ scene->interactions->requestErase(I); return; }
+	if(localF[0]>0 && !noBreak){ scene->interactions->requestErase(I); TIMING_DELTAS_CHECKPOINT("goLaw");return; }
 
 	if(!noSlip){
 		// plastic slip, if necessary; non-zero elastic limit only for compression
@@ -310,6 +324,7 @@ void Law2_L3Geom_FrictPhys_ElPerfPl::go(shared_ptr<IGeom>& ig, shared_ptr<IPhys>
 	if(scene->trackEnergy)	{ scene->energy->add(0.5*(pow(geom->relU()[0],2)*phys->kn+(pow(geom->relU()[1],2)+pow(geom->relU()[2],2))*phys->ks),"elastPotential",elastPotentialIx,/*reset at every timestep*/true); }
 	// apply force: this converts the force to global space, updates NormShearPhys::{normal,shear}Force, applies to particles
 	geom->applyLocalForce(localF,I,scene,phys);
+        TIMING_DELTAS_CHECKPOINT("goLaw");
 }
 
 

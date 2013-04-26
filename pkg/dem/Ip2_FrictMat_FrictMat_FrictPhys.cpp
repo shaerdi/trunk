@@ -21,7 +21,11 @@ void Ip2_FrictMat_FrictMat_FrictPhys::go( const shared_ptr<Material>& b1
 					, const shared_ptr<Material>& b2
 					, const shared_ptr<Interaction>& interaction)
 {
-	if(interaction->phys) return;
+        TIMING_DELTAS_START();
+	if(interaction->phys) {
+            TIMING_DELTAS_CHECKPOINT("goPhys"); 
+            return;
+        }
 	const shared_ptr<FrictMat>& mat1 = YADE_PTR_CAST<FrictMat>(b1);
 	const shared_ptr<FrictMat>& mat2 = YADE_PTR_CAST<FrictMat>(b2);
 	interaction->phys = shared_ptr<FrictPhys>(new FrictPhys());
@@ -46,6 +50,7 @@ void Ip2_FrictMat_FrictMat_FrictPhys::go( const shared_ptr<Material>& b1
 	contactPhysics->tangensOfFrictionAngle = std::tan(frictionAngle);
 	contactPhysics->kn = Kn;
 	contactPhysics->ks = Ks;
+        TIMING_DELTAS_CHECKPOINT("goPhys");
 };
 YADE_PLUGIN((Ip2_FrictMat_FrictMat_FrictPhys));
 
