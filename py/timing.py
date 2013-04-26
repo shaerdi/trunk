@@ -44,8 +44,8 @@ def _delta_stats(deltas,totalTime,level):
 	deltaTime=sum([d[1] for d in deltas.data])
 	for d in deltas.data:
 		print _formatLine(d[0],d[1],d[2],totalTime,level); ret+=1
-	if len(deltas.data)>1:
-		print _formatLine('TOTAL',deltaTime,sum(d[2] for d in deltas.data),totalTime,level); ret+=1
+	#if len(deltas.data)>1:
+		#print _formatLine('TOTAL',deltaTime,sum(d[2] for d in deltas.data),totalTime,level); ret+=1
 	return ret
 
 def _engines_stats(engines,totalTime,level):
@@ -64,8 +64,8 @@ def _engines_stats(engines,totalTime,level):
 			lines+=_engines_stats(e.physDispatcher.functors,e.execTime,level+1)
 			lines+=_engines_stats(e.lawDispatcher.functors,e.execTime,level+1)
 		elif isinstance(e,ParallelEngine): lines+=_engines_stats(e.slave,e.execTime,level+1)
-	if hereLines>1:
-		print _formatLine('TOTAL',totalTime,-1,totalTime,level); lines+=1
+	#if hereLines>1:
+		#print _formatLine('TOTAL',totalTime,-1,totalTime,level); lines+=1
 	return lines
 
 def stats():
