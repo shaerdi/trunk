@@ -116,7 +116,7 @@ bool Ig2_Facet_Sphere_ScGeom::go(const shared_ptr<Shape>& cm1,
 		scm->radius2 = sphereRadius;
 		if (isNew) c->geom = scm;
 		scm->precompute(state1,state2,scene,c,normal,isNew,shift2,false/*avoidGranularRatcheting only for sphere-sphere*/);
-		TIMING_DELTAS_CHECKPOINT("Ig2_Facet_Sphere_ScGeom");
+                TIMING_DELTAS_CHECKPOINT("Ig2_Facet_Sphere_ScGeom");
 		return true;
 	}
 	TIMING_DELTAS_CHECKPOINT("Ig2_Facet_Sphere_ScGeom");
@@ -141,11 +141,12 @@ bool Ig2_Facet_Sphere_ScGeom::goReverse(	const shared_ptr<Shape>& cm1,
 /********* Wall + Sphere **********/
 
 bool Ig2_Wall_Sphere_ScGeom::go(const shared_ptr<Shape>& cm1, const shared_ptr<Shape>& cm2, const State& state1, const State& state2, const Vector3r& shift2, const bool& force, const shared_ptr<Interaction>& c){
+	TIMING_DELTAS_START();
 	Wall* wall=static_cast<Wall*>(cm1.get());
 	const Real radius=static_cast<Sphere*>(cm2.get())->radius;
 	const int& ax(wall->axis);
 	Real dist=(state2.pos)[ax]+shift2[ax]-state1.pos[ax]; // signed "distance" between centers
-	if(!c->isReal() && abs(dist)>radius && !force) { return false; }// wall and sphere too far from each other
+	if(!c->isReal() && abs(dist)>radius && !force) { TIMING_DELTAS_CHECKPOINT("Ig2WallSphereScGeom"); return false; }// wall and sphere too far from each other
 
 	// contact point is sphere center projected onto the wall
 	Vector3r contPt=state2.pos+shift2; contPt[ax]=state1.pos[ax];
@@ -163,6 +164,7 @@ bool Ig2_Wall_Sphere_ScGeom::go(const shared_ptr<Shape>& cm1, const shared_ptr<S
 	ws->penetrationDepth=-(abs(dist)-radius);
 	// ws->normal is assigned by precompute
 	ws->precompute(state1,state2,scene,c,normal,isNew,shift2,noRatch);
+	TIMING_DELTAS_CHECKPOINT("Ig2WallSphereScGeom");
 	return true;
 }
 
