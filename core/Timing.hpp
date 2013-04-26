@@ -3,6 +3,14 @@
 #include<time.h>
 #include<boost/python.hpp>
 
+#ifdef USE_TIMING_DELTAS
+	#define TIMING_DELTAS_CHECKPOINT(cpt) timingDeltas->checkpoint(cpt)
+	#define TIMING_DELTAS_START() timingDeltas->start()
+#else
+	#define TIMING_DELTAS_CHECKPOINT(cpt)
+	#define TIMING_DELTAS_START()
+#endif
+
 struct TimingInfo{
 	typedef unsigned long long delta;
 	long nExec;
