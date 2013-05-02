@@ -4,6 +4,8 @@
 #include<yade/pkg/dem/DemXDofGeom.hpp>
 #include<yade/pkg/dem/Shop.hpp>
 #include<yade/pkg/common/InteractionLoop.hpp>
+#include<yade/pkg/common/Facet.hpp>
+#include<yade/pkg/common/Wall.hpp>
 
 
 YADE_PLUGIN((CpmState)(CpmMat)(Ip2_CpmMat_CpmMat_CpmPhys)(Ip2_FrictMat_CpmMat_FrictPhys)(CpmPhys)(Law2_ScGeom_CpmPhys_Cpm)
@@ -30,15 +32,9 @@ void Ip2_FrictMat_CpmMat_FrictPhys::go(const shared_ptr<Material>& pp1, const sh
 
 CREATE_LOGGER(Ip2_CpmMat_CpmMat_CpmPhys);
 void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared_ptr<Material>& pp2, const shared_ptr<Interaction>& interaction){
-	TIMING_DELTAS_START();
 	// no updates of an already existing contact necessary
-	if (interaction->phys) {
-	    TIMING_DELTAS_CHECKPOINT("Ip2_Cpm_Phys");
-	TIMING_DELTAS_CHECKPOINT("a");
-	TIMING_DELTAS_CHECKPOINT("b");
-	TIMING_DELTAS_CHECKPOINT("c");
-            return;
-        }
+	if (interaction->phys) return;
+	TIMING_DELTAS_START();
 	shared_ptr<CpmPhys> cpmPhys(new CpmPhys());
 	interaction->phys = cpmPhys;
 	CpmMat* mat1 = YADE_CAST<CpmMat*>(pp1.get());
@@ -48,12 +44,12 @@ void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared
 	if (!mat1->neverDamage) {
 		assert(!isnan(mat1->sigmaT));
 		assert(!isnan(mat1->epsCrackOnset));
-		assert(!isnan(mat1->crackOpening) || !isnan(mat1->relDuctility));
+		assert(!isnan(mat1->relDuctility));
 	}
 	if (!mat2->neverDamage) {
 		assert(!isnan(mat2->sigmaT));
 		assert(!isnan(mat2->epsCrackOnset));
-		assert(!isnan(mat2->crackOpening) || !isnan(mat2->relDuctility));
+		assert(!isnan(mat2->relDuctility));
 	}
 
 	cpmPhys->damLaw = mat1->damLaw;
@@ -66,7 +62,6 @@ void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared
 		cpmPhys->isCohesive = (cohesiveThresholdIter < 0 || scene->iter < cohesiveThresholdIter);
 		#define _CPATTR(a) cpmPhys->a=mat1->a
 			_CPATTR(epsCrackOnset);
-			_CPATTR(crackOpening);
 			_CPATTR(relDuctility);
 			_CPATTR(neverDamage);
 			_CPATTR(dmgTau);
@@ -84,7 +79,6 @@ void Ip2_CpmMat_CpmMat_CpmPhys::go(const shared_ptr<Material>& pp1, const shared
 			cpmPhys->undamagedCohesion = .5*(mat1->sigmaT + mat2->sigmaT);
 			cpmPhys->isCohesive = (cohesiveThresholdIter < 0 || scene->iter < cohesiveThresholdIter);
 			_AVGATTR(epsCrackOnset);
-			_AVGATTR(crackOpening);
 			_AVGATTR(relDuctility);
 			cpmPhys->neverDamage = (mat1->neverDamage || mat2->neverDamage);
 			_AVGATTR(dmgTau);
@@ -194,7 +188,6 @@ Real CpmPhys::funcGInv(const Real& omega, const Real& epsCrackOnset, const Real&
 				dfg = CpmPhys::funcGDKappa(ret,epsCrackOnset,epsFracture,neverDamage,damLaw);
 				decr = fg/dfg;
 				ret -= decr;
-				//printf("i %d fg %e dfg %e decr %e ret %e\n",i,fg,dfg,decr,ret);
 				if (fabs(decr/epsCrackOnset) < tol) {
 					return ret;
 				}
@@ -283,16 +276,33 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 
 	/* just the first time */
 	if (I->isFresh(scene)) {
-		Vector3r pos1 = scene->bodies->operator[](I->id1)->state->pos;
-		Vector3r pos2 = scene->bodies->operator[](I->id2)->state->pos;
-		Real minRad = (geom->refR1 <= 0? geom->refR2 : (geom->refR2 <=0? geom->refR1 : min(geom->refR1,geom->refR2)));
-		Vector3r shift2 = scene->isPeriodic? Vector3r(scene->cell->hSize*I->cellDist.cast<Real>()) : Vector3r::Zero();
-		phys->refLength = (pos2 - pos1 + shift2).norm();
-		phys->crossSection = Mathr::PI*pow(minRad,2);
-		phys->refPD = geom->refR1 + geom->refR2 - phys->refLength;
+		const shared_ptr<Body> b1 = Body::byId(I->id1,scene);
+		const shared_ptr<Body> b2 = Body::byId(I->id2,scene);
+		const int sphereIndex = Sphere::getClassIndexStatic();
+		const int facetIndex = Facet::getClassIndexStatic();
+		const int wallIndex = Wall::getClassIndexStatic();
+		const int b1index = b1->shape->getClassIndex();
+		const int b2index = b2->shape->getClassIndex();
+		if (b1index == sphereIndex && b2index == sphereIndex) { // both bodies are spheres
+			const Vector3r& pos1 = Body::byId(I->id1,scene)->state->pos;
+			const Vector3r& pos2 = Body::byId(I->id2,scene)->state->pos;
+			Real minRad = (geom->refR1 <= 0? geom->refR2 : (geom->refR2 <=0? geom->refR1 : min(geom->refR1,geom->refR2)));
+			Vector3r shift2 = scene->isPeriodic? Vector3r(scene->cell->hSize*I->cellDist.cast<Real>()) : Vector3r::Zero();
+			phys->refLength = (pos2 - pos1 + shift2).norm();
+			phys->crossSection = Mathr::PI*pow(minRad,2);
+			phys->refPD = geom->refR1 + geom->refR2 - phys->refLength;
+		} else if (b1index == facetIndex || b2index == facetIndex || b1index == wallIndex || b2index == wallIndex) { // one body is facet or wall
+			shared_ptr<Body> sphere, plane;
+			if (b1index == facetIndex || b1index == wallIndex) { plane = b1; sphere = b2; }
+			else { plane = b2; sphere = b1; }
+			Real rad = ( (Sphere*) sphere->shape.get() )->radius;
+			phys->refLength = rad;
+			phys->crossSection = Mathr::PI*pow(rad,2);
+			phys->refPD = 0.;
+		}
 		phys->kn = phys->crossSection*phys->E/phys->refLength;
 		phys->ks = phys->crossSection*phys->G/phys->refLength;
-		phys->epsFracture = isnan(phys->crackOpening)? phys->epsCrackOnset*phys->relDuctility : phys->crackOpening/(2*minRad); /* *geom->refLength */;
+		phys->epsFracture = phys->epsCrackOnset*phys->relDuctility;
 	}
 	
 	/* shorthands */
@@ -308,7 +318,6 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 	const Real& omegaThreshold(this->omegaThreshold);
 	const Real& epsCrackOnset(phys->epsCrackOnset);
 	Real& relResidualStrength(phys->relResidualStrength);
-	/*const Real& crackOpening(phys->crackOpening); */
 	/*const Real& relDuctility(phys->relDuctility); */
 	const Real& epsFracture(phys->epsFracture);
 	const int& damLaw(phys->damLaw);
@@ -351,7 +360,6 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 		epsN += phys->isoPrestress/E;
 		/* very simplified version of the constitutive law */
 		kappaD = max(max(0.,epsN),kappaD); /* internal variable, max positive strain (non-decreasing) */
-		/* Real epsFracture = crackOpening/geom->refLength; */
 		omega = isCohesive? phys->funcG(kappaD,epsCrackOnset,epsFracture,neverDamage,damLaw) : 1.; /* damage variable (non-decreasing, as funcG is also non-decreasing) */
 		sigmaN = (1-(epsN>0?omega:0))*E*epsN; /* damage taken in account in tension only */
 		sigmaT = G*epsT; /* trial stress */
@@ -385,7 +393,7 @@ void Law2_ScGeom_CpmPhys_Cpm::go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _p
 	        TIMING_DELTAS_CHECKPOINT("Calc forces");
 	        TIMING_DELTAS_CHECKPOINT("Save forces");
 		return;
-	} \
+	}
 
 	Fn = sigmaN*crossSection; phys->normalForce = -Fn*geom->normal;
 	Fs = sigmaT*crossSection; phys->shearForce = -Fs;
