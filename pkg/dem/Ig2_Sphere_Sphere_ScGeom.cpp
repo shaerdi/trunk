@@ -22,6 +22,7 @@ bool Ig2_Sphere_Sphere_ScGeom::go(	const shared_ptr<Shape>& cm1, const shared_pt
 	                TIMING_DELTAS_CHECKPOINT("Variable lookup");
 			TIMING_DELTAS_CHECKPOINT("Geom evaluation");
 	                TIMING_DELTAS_CHECKPOINT("Precompute");
+	                TIMING_DELTAS_CHECKPOINT("a");
 			return false;
 		}
 	}
@@ -44,6 +45,7 @@ bool Ig2_Sphere_Sphere_ScGeom::go(	const shared_ptr<Shape>& cm1, const shared_pt
 	TIMING_DELTAS_CHECKPOINT("Geom evaluation");
 	scm->precompute(state1,state2,scene,c,normal,isNew,shift2,avoidGranularRatcheting);
 	TIMING_DELTAS_CHECKPOINT("Precompute");
+	TIMING_DELTAS_CHECKPOINT("a");
 	return true;
 }
 

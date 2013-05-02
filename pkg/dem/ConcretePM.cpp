@@ -23,11 +23,6 @@ void Ip2_FrictMat_CpmMat_FrictPhys::go(const shared_ptr<Material>& pp1, const sh
 	const shared_ptr<CpmMat>& mat2 = YADE_PTR_CAST<CpmMat>(pp2);
 	Ip2_FrictMat_FrictMat_FrictPhys().go(mat1,mat2,interaction);
 	TIMING_DELTAS_CHECKPOINT("CpmFrictPhys");
-//#ifdef USE_TIMING_DELTAS
-        //bla
-//#else 
-        //hot
-//#endif
 }
 
 
