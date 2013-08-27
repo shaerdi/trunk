@@ -12,6 +12,8 @@
 #  ENABLE_OPENMP: enable OpenMP-parallelizing option (ON by default)
 #  ENABLE_GTS: enable GTS-option (ON by default)
 #  ENABLE_GL2PS: enable GL2PS-option (ON by default)
+#  ENABLE_LINSOLV: enable LINSOLV-option (ON by default)
+#  ENABLE_PFVFLOW: enable PFVFLOW-option, FlowEngine (ON by default)
 #  runtimePREFIX: used for packaging, when install directory is not the same is runtime directory (/usr/local by default)
 #  CHUNKSIZE: set >1, if you want several sources to be compiled at once. Increases compilation speed and RAM-consumption during it (1 by default).
 
@@ -48,7 +50,7 @@ IF (CMAKE_CXX_FLAGS)
     SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -DYADE_PTR_CAST=static_pointer_cast -DYADE_CAST=static_cast -fPIC")
   ENDIF (DEBUG)
 ELSE (CMAKE_CXX_FLAGS)
-  #If flags are not set, add all usefull flags
+  #If flags are not set, add all useful flags
   IF (DEBUG)
     SET(CMAKE_VERBOSE_MAKEFILE 1)
     SET(CMAKE_BUILD_TYPE Debug)
@@ -71,9 +73,10 @@ MESSAGE("--   Boost_LIBRARIES: " ${Boost_LIBRARIES})
 
 #===========================================================
 FIND_PACKAGE(NumPy REQUIRED)
-INCLUDE_DIRECTORIES(${NUMPY_INCLUDE_DIRS})
+  INCLUDE_DIRECTORIES(${NUMPY_INCLUDE_DIRS})
 
 FIND_PACKAGE(Loki REQUIRED)
+  INCLUDE_DIRECTORIES(${LOKI_INCLUDE_DIR})
 FIND_PACKAGE(Eigen3 REQUIRED)
 #===========================================================
 
@@ -88,7 +91,8 @@ OPTION(ENABLE_GTS "Enable GTS" ${DEFAULT})
 OPTION(ENABLE_GUI "Enable GUI" ${DEFAULT})
 OPTION(ENABLE_CGAL "Enable CGAL" ${DEFAULT})
 OPTION(ENABLE_GL2PS "Enable GL2PS" ${DEFAULT})
-OPTION(ENABLE_LINSOLV "Enable direct solver for the flow engines (experimental)" OFF)
+OPTION(ENABLE_LINSOLV "Enable direct solver for the flow engines (experimental)" ${DEFAULT})
+OPTION(ENABLE_PFVFLOW "Enable flow engine (experimental)" ${DEFAULT})
 
 #===========================================================
 # Use Eigen3 by default
@@ -119,7 +123,7 @@ ENDIF(ENABLE_VTK)
 IF(ENABLE_OPENMP)
   FIND_PACKAGE(OpenMP)
   IF(OPENMP_FOUND)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DYADE_OPENMP -fopenmp")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DYADE_OPENMP ${OpenMP_CXX_FLAGS}")
     MESSAGE(STATUS "Found OpenMP")
     SET(CONFIGURED_FEATS "${CONFIGURED_FEATS} OpenMP")
     SET(features "${features} openmp")
@@ -177,14 +181,12 @@ ELSE(ENABLE_GUI)
   SET(DISABLED_FEATS "${DISABLED_FEATS} GUI")
 ENDIF(ENABLE_GUI)
 #===========================================================
-# This one will automaticaly enable CGAL
+# This one will automatically enable CGAL
 IF(ENABLE_PFVFLOW)
   IF (NOT ENABLE_CGAL)
     MESSAGE(STATUS "PFVFLOW depends on CGAL, attempting to turn ENABLE_CGAL ON")
     SET(ENABLE_CGAL ON)
   ENDIF (NOT ENABLE_CGAL)
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFLOW_ENGINE")
-  SET(CONFIGURED_FEATS "${CONFIGURED_FEATS} PFVflow")
 ENDIF(ENABLE_PFVFLOW)
 #===========================================================
 IF(ENABLE_CGAL)  
@@ -201,28 +203,47 @@ IF(ENABLE_CGAL)
     SET(LINKLIBS  "${LINKLIBS};${CGAL_LIBRARIES};${GMP_LIBRARIES};${GMPXX_LIBRARIES};")
     MESSAGE(STATUS "Found CGAL")
     SET(CONFIGURED_FEATS "${CONFIGURED_FEATS} CGAL")
+
+    IF(ENABLE_PFVFLOW)
+      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFLOW_ENGINE")
+      SET(CONFIGURED_FEATS "${CONFIGURED_FEATS} PFVflow")
+    ELSE(ENABLE_PFVFLOW)
+      SET(DISABLED_FEATS "${DISABLED_FEATS} PFVflow")
+    ENDIF(ENABLE_PFVFLOW)
+
   ELSE(CGAL_FOUND AND GMP_FOUND AND (NOT("${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1}" MATCHES ".*clang")))
     MESSAGE(STATUS "CGAL NOT found")
     SET(DISABLED_FEATS "${DISABLED_FEATS} CGAL")
     SET(ENABLE_CGAL OFF)
+    IF(ENABLE_PFVFLOW)
+      SET(DISABLED_FEATS "${DISABLED_FEATS} PFVflow")
+      MESSAGE(STATUS "CGAL NOT found: PFVFLOW disabled")
+    ENDIF(ENABLE_PFVFLOW)
+
   ENDIF(CGAL_FOUND AND GMP_FOUND AND (NOT("${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1}" MATCHES ".*clang")))
 ELSE(ENABLE_CGAL)
   SET(DISABLED_FEATS "${DISABLED_FEATS} CGAL")
 ENDIF(ENABLE_CGAL)
 #===========================================================
 IF(ENABLE_LINSOLV)
-  INCLUDE(FindCholmod)
   FIND_PACKAGE(Cholmod)
-  IF(CHOLMOD_FOUND)
+  FIND_PACKAGE(OpenBlas)
+  FIND_PACKAGE(Metis)
+  IF(CHOLMOD_FOUND AND OPENBLAS_FOUND AND METIS_FOUND)
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CGAL_DEFINITIONS} -DLINSOLV -DFLOW_ENGINE")
-    SET(LINKLIBS  "${LINKLIBS};${CHOLMOD_LIBRARIES};${AMD_LIBRARY};${CAMD_LIBRARY};${COLAMD_LIBRARY};${CCOLAMD_LIBRARY};libmetis.so;libopenblas.a;")
-    MESSAGE(STATUS "Found CHOLMOD")
-    SET(CONFIGURED_FEATS "${CONFIGURED_FEATS} cholmod")
-  ELSE(CHOLMOD_FOUND)
+    SET(LINKLIBS  "${LINKLIBS};${CHOLMOD_LIBRARIES};${AMD_LIBRARY};${CAMD_LIBRARY};${COLAMD_LIBRARY};${CCOLAMD_LIBRARY};${OPENBLAS_LIBRARY};${METIS_LIBRARY}")
+    INCLUDE_DIRECTORIES(${METIS_INCLUDE_DIR} ${CHOLMOD_INCLUDE_DIR})
+    MESSAGE(STATUS "Found Cholmod")
+    MESSAGE(STATUS "Found OpenBlas")
+    MESSAGE(STATUS "Found Metis")
+    SET(CONFIGURED_FEATS "${CONFIGURED_FEATS} LinSolv")
+  ELSE(CHOLMOD_FOUND AND OPENBLAS_FOUND AND METIS_FOUND)
     MESSAGE(STATUS "CHOLMOD NOT found, LINSOLV disabled")
-    SET(DISABLED_FEATS "${DISABLED_FEATS} cholmod")
+    SET(DISABLED_FEATS "${DISABLED_FEATS} LinSolv")
     SET(ENABLE_LINSOLV OFF)
-  ENDIF(CHOLMOD_FOUND)
+  ENDIF(CHOLMOD_FOUND AND OPENBLAS_FOUND AND METIS_FOUND)
+ELSE(ENABLE_LINSOLV)
+  SET(DISABLED_FEATS "${DISABLED_FEATS} LinSolv")
 ENDIF(ENABLE_LINSOLV)
 #===============================================
 IF(ENABLE_GL2PS)
@@ -313,22 +334,15 @@ SET(SRC_LIB "${SRC_LIB};lib/base/Math.cpp;lib/factory/ClassFactory.cpp;lib/facto
 
 IF (CHUNKSIZE)
   INCLUDE(CombineSources)
-  
   COMBINE_SOURCES(${CMAKE_BINARY_DIR}/core "${SRC_CORE}" ${CHUNKSIZE})
   FILE(GLOB SRC_CORE_COMBINED "${CMAKE_BINARY_DIR}/core.*.cpp")
-  ADD_LIBRARY(core SHARED ${SRC_CORE_COMBINED})
-  
   COMBINE_SOURCES(${CMAKE_BINARY_DIR}/pkg "${SRC_PKG}" ${CHUNKSIZE})
   FILE(GLOB SRC_PKG_COMBINED "${CMAKE_BINARY_DIR}/pkg.*.cpp")
-  ADD_LIBRARY(plugins SHARED ${SRC_PKG_COMBINED})
-  
   COMBINE_SOURCES(${CMAKE_BINARY_DIR}/lib "${SRC_LIB}" ${CHUNKSIZE})
   FILE(GLOB SRC_LIB_COMBINED "${CMAKE_BINARY_DIR}/lib.*.cpp")
-  ADD_LIBRARY(support SHARED ${SRC_LIB_COMBINED})
+  ADD_LIBRARY(yade SHARED ${SRC_LIB_COMBINED} ${SRC_CORE_COMBINED} ${SRC_PKG_COMBINED})
 ELSE (CHUNKSIZE)
-  ADD_LIBRARY(core SHARED ${SRC_CORE})
-  ADD_LIBRARY(plugins SHARED ${SRC_PKG})
-  ADD_LIBRARY(support SHARED ${SRC_LIB})
+  ADD_LIBRARY(yade SHARED ${SRC_CORE} ${SRC_PKG} ${SRC_LIB})
 ENDIF (CHUNKSIZE)
 #===========================================================
 find_python_module(minieigen)
@@ -342,17 +356,14 @@ find_python_module(Tkinter REQUIRED)
 
 ADD_LIBRARY(boot SHARED ${CMAKE_CURRENT_SOURCE_DIR}/core/main/pyboot.cpp)
 SET_TARGET_PROPERTIES(boot PROPERTIES PREFIX "")
-TARGET_LINK_LIBRARIES(support ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${LINKLIBS})
-TARGET_LINK_LIBRARIES(core support ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${LINKLIBS} -lrt)
-TARGET_LINK_LIBRARIES(boot plugins support core ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${LINKLIBS})
+TARGET_LINK_LIBRARIES(yade ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${LINKLIBS} ${LOKI_LIBRARY} -lrt)
+TARGET_LINK_LIBRARIES(boot yade)
 
 IF(ENABLE_VTK)
-  TARGET_LINK_LIBRARIES(plugins vtkHybrid)
+  TARGET_LINK_LIBRARIES(yade vtkHybrid)
 ENDIF(ENABLE_VTK)
 IF(ENABLE_GUI)
-  TARGET_LINK_LIBRARIES(core ${GUI_LIBS})
-  TARGET_LINK_LIBRARIES(plugins _GLViewer ${GUI_LIBS})
-  TARGET_LINK_LIBRARIES(support ${GUI_LIBS})
+  TARGET_LINK_LIBRARIES(yade _GLViewer ${GUI_LIBS})
 ENDIF(ENABLE_GUI)
 
 #====================================
@@ -390,9 +401,7 @@ INSTALL(FILES ${filesPYChecksData} DESTINATION ${YADE_PY_PATH}/yade/tests/checks
 INSTALL(FILES "${CMAKE_CURRENT_SOURCE_DIR}/doc/yade-logo-note.png" DESTINATION "${YADE_DOC_PATH}/img")
 
 INSTALL(TARGETS boot DESTINATION "${YADE_PY_PATH}/yade/")
-INSTALL(TARGETS core DESTINATION ${YADE_LIB_PATH})
-INSTALL(TARGETS plugins DESTINATION ${YADE_LIB_PATH})
-INSTALL(TARGETS support DESTINATION ${YADE_LIB_PATH})
+INSTALL(TARGETS yade DESTINATION ${YADE_LIB_PATH})
 
 #===========================================================
 MESSAGE(STATUS "===========================================================")

@@ -213,8 +213,8 @@ void PeriTriaxController::action()
 		//-bogusPoisson*(cellGrow[ax1]/refSize[ax1])*(stiff[ax1]/cellArea[ax1])-bogusPoisson*(cellGrow[ax2]/refSize[ax2])*(stiff[ax2]/cellArea[ax2]);
 	}
  	for (int k=0;k<3;k++) strainRate[k]=scene->cell->velGrad(k,k);
-	//Update energy input
-	Real dW=(scene->cell->velGrad*stressTensor).trace()*scene->dt*scene->cell->hSize.determinant();
+	//Update energy input FIXME: replace trace by norm, so it works for any kind of deformation
+	Real dW=(0.5*(scene->cell->prevVelGrad + scene->cell->velGrad)*stressTensor).trace()*scene->dt*(scene->cell->hSize.determinant());
 	externalWork+=dW;
 	if(scene->trackEnergy) scene->energy->add(-dW,"velGradWork",velGradWorkIx,/*non-incremental*/false);
 	prevGrow = strainRate;
@@ -264,15 +264,16 @@ void Peri3dController::action(){
 		}
 
 		// variables used in evaluation of ideal stress and ideal strain for each part defined by ##Path
-		paths[0]=&xxPath; paths[1]=&yyPath; paths[2]=&zzPath; paths[3]=&yzPath; paths[4]=&zxPath; paths[5]=&xyPath; // pointers to the Paths
+		//paths[0]=&xxPath; paths[1]=&yyPath; paths[2]=&zzPath; paths[3]=&yzPath; paths[4]=&zxPath; paths[5]=&xyPath; // pointers to the Paths
 		pathSizes[0]=xxPath.size(); pathSizes[1]=yyPath.size(); pathSizes[2]=zzPath.size();
 		pathSizes[3]=yzPath.size(); pathSizes[4]=zxPath.size(); pathSizes[5]=xyPath.size();
 		for (int i=0; i<6; i++) {pathsCounter[i] = 0;} // inidicator in which part of the path we are
 
-		// path[0] is a pointer to xxPath
-		// path[0]->operator[](j) is j-th Vector2r in path[0]
+		// abcPath[j] is j-th Vector2r in path[0]
 		// PATH_OP_OP(0,j,k) = path[0]->operator[](j).operator(k) is k-th element of j-th Vector2r of xxPath
-		#define PATH_OP_OP(pi,op1i,op2i) paths[pi]->operator[](op1i).operator()(op2i)
+		//#define PATH_OP_OP(pi,op1i,op2i) paths[pi]->operator[](op1i).operator()(op2i)
+		//#define PATH_OP_OP(pi,op1i,op2i) (pi==0?xxPath:pi==1?yyPath:pi==2?zzPath:pi==3?yzPath:pi==4?zxPath:pi==5?xyPath:NULL)->operator[](op1i).operator()(op2i)
+		#define PATH_OP_OP(pi,op1i,op2i) (pi==0?xxPath:pi==1?yyPath:pi==2?zzPath:pi==3?yzPath:pi==4?zxPath:xyPath)[op1i].operator()(op2i)
 
 		for (int i=0; i<6; i++) {
 			for (int j=1; j<pathSizes[i]; j++) {

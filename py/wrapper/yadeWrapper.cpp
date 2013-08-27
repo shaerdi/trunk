@@ -92,7 +92,7 @@ class pyBodyContainer{
 	private:
 		void checkClump(shared_ptr<Body> b){
 			if (!(b->isClump())){
-				PyErr_SetString(PyExc_TypeError,("Error: Body"+lexical_cast<string>(b->getId())+" is not a clump.").c_str()); 
+				PyErr_SetString(PyExc_TypeError,("Error: Body"+lexical_cast<string>(b->getId())+" is not a clump.").c_str());
 				python::throw_error_already_set();
 			}
 		}
@@ -149,7 +149,7 @@ class pyBodyContainer{
 		};
 		
 		FOREACH(Body::id_t id, ids) Clump::add(clumpBody,Body::byId(id,scene));
-		Clump::updateProperties(clumpBody,/*intersecting*/ false);
+		Clump::updateProperties(clumpBody);
 		return clumpBody->getId();
 	}
 	python::tuple appendClump(vector<shared_ptr<Body> > bb){
@@ -158,28 +158,29 @@ class pyBodyContainer{
 		// clump them together (the clump fcn) and return
 		return python::make_tuple(clump(ids),ids);
 	}
-	void addToClump(Body::id_t bid, Body::id_t cid){
+	void addToClump(vector<Body::id_t> bids, Body::id_t cid){
 		Scene* scene(Omega::instance().getScene().get());	// get scene
-		shared_ptr<Body> bp = Body::byId(bid,scene);		// get body pointer
 		shared_ptr<Body> clp = Body::byId(cid,scene);		// get clump pointer
 		checkClump(clp);
-		if (bp->isClump()){
-			if (bp == clp) {PyErr_Warn(PyExc_UserWarning,("Warning: Body "+lexical_cast<string>(bid)+" and clump "+lexical_cast<string>(cid)+" are the same bodies. Body was not added.").c_str()); return;}
-			Clump::add(clp,bp);//add clump bid to clump cid
-			Clump::updateProperties(clp,/*intersecting*/false);
-			proxee->erase(bid);//erase old clump
-			return;
+		vector<Body::id_t> eraseList;
+		FOREACH(Body::id_t bid, bids) {
+			shared_ptr<Body> bp = Body::byId(bid,scene);		// get body pointer
+			if (bp->isClump()){
+				if (bp == clp) {PyErr_Warn(PyExc_UserWarning,("Warning: Body "+lexical_cast<string>(bid)+" and clump "+lexical_cast<string>(cid)+" are the same bodies. Body was not added.").c_str()); return;}
+				Clump::add(clp,bp);//add clump bid to clump cid
+				eraseList.push_back(bid);
+			}
+			else if (bp->isClumpMember()){
+				Body::id_t bpClumpId = bp->clumpId;
+				shared_ptr<Body> bpClumpPointer = Body::byId(bpClumpId,scene);
+				if (bpClumpPointer == clp) {PyErr_Warn(PyExc_UserWarning,("Warning: Body "+lexical_cast<string>(bid)+" is already a clump member of clump "+lexical_cast<string>(cid)+". Body was not added.").c_str()); return;} 
+				Clump::add(clp,bpClumpPointer);//add clump bpClumpId to clump cid
+				eraseList.push_back(bpClumpId);
+			}
+			else Clump::add(clp,bp);// bp must be a standalone!
 		}
-		else if (bp->isClumpMember()){
-			Body::id_t bpClumpId = bp->clumpId;
-			shared_ptr<Body> bpClumpPointer = Body::byId(bpClumpId,scene);
-			if (bpClumpPointer == clp) {PyErr_Warn(PyExc_UserWarning,("Warning: Body "+lexical_cast<string>(bid)+" is already a clump member of clump "+lexical_cast<string>(cid)+". Body was not added.").c_str()); return;} 
-			Clump::add(clp,bpClumpPointer);//add clump bpClumpId to clump cid
-			Clump::updateProperties(clp,/*intersecting*/false);
-			proxee->erase(bpClumpId);//erase old clump
-			return;
-		}
-		else {Clump::add(clp,bp); Clump::updateProperties(clp,/*intersecting*/false);}// bp must be a standalone!
+		Clump::updateProperties(clp);
+		FOREACH(Body::id_t bid, eraseList) proxee->erase(bid);//erase old clumps
 	}
 	void releaseFromClump(Body::id_t bid, Body::id_t cid){
 		Scene* scene(Omega::instance().getScene().get());	// get scene
@@ -193,7 +194,7 @@ class pyBodyContainer{
 				std::map<Body::id_t,Se3r>& members = clump->members;
 				if (members.size() == 2) {PyErr_Warn(PyExc_UserWarning,("Warning: Body "+lexical_cast<string>(bid)+" not released from clump "+lexical_cast<string>(cid)+", because number of clump members would get < 2!").c_str()); return;}
 				Clump::del(clp,bp);//release bid from cid
-				Clump::updateProperties(clp,/*intersecting*/false);
+				Clump::updateProperties(clp);
 			} else { PyErr_Warn(PyExc_UserWarning,("Warning: Body "+lexical_cast<string>(bid)+" must be a clump member of clump "+lexical_cast<string>(cid)+". Body was not released.").c_str()); return;}
 		} else { PyErr_Warn(PyExc_UserWarning,("Warning: Body "+lexical_cast<string>(bid)+" is not a clump member. Body was not released.").c_str()); return;}
 	}
@@ -343,105 +344,6 @@ class pyBodyContainer{
 		}
 		return ret;
 	}
-	Real getClumpVolume(const shared_ptr<Body>& b, int numTries){//algorithm for estimation of clump volumes
-		checkClump(b);
-		Scene* scene(Omega::instance().getScene().get());	// get scene
-		shared_ptr<Sphere> sph (new Sphere);
-		int Sph_Index = sph->getClassIndexStatic();		// get sphere index for checking if bodies are spheres
-		//get boundaries of clump:
-		const shared_ptr<Clump>& clump=YADE_PTR_CAST<Clump>(b->shape);
-		std::map<Body::id_t,Se3r>& members = clump->members;
-		Real xmax = -1e10;
-		Real ymax = xmax;
-		Real zmax = xmax;
-		Real xmin = 1e10;
-		Real ymin = xmin;
-		Real zmin = xmin;
-		FOREACH(MemberMap::value_type& mm, members){
-			const Body::id_t& memberId=mm.first;
-			const shared_ptr<Body>& member=Body::byId(memberId,scene);
-			assert(member->isClumpMember());
-			if (member->shape->getClassIndex() ==  Sph_Index){//clump member should be a sphere
-				const Sphere* sphere = YADE_CAST<Sphere*> (member->shape.get());
-				xmax = max(member->state->pos[0] + sphere->radius, xmax);
-				ymax = max(member->state->pos[1] + sphere->radius, ymax);
-				zmax = max(member->state->pos[2] + sphere->radius, zmax);
-				xmin = min(member->state->pos[0] - sphere->radius, xmin);
-				ymin = min(member->state->pos[1] - sphere->radius, ymin);
-				zmin = min(member->state->pos[2] - sphere->radius, zmin);
-			}
-			else {PyErr_Warn(PyExc_UserWarning,("Warning: getClumpVolume method detected, that clump with id "+lexical_cast<string>(b->getId())+" has non-spherical members.").c_str()); return 0;}
-		}
-		//generate regular grid points and check if point is inside or outside of clump:
-		Vector3r gridPoint;
-		int c_in = 0;
-		int numPoints1D = ceil(pow(numTries,1./3.));
-		for (int ii = 0; ii < numPoints1D; ii++){
-			for (int jj = 0; jj < numPoints1D; jj++){
-				for (int kk = 0; kk < numPoints1D; kk++){
-					bool isInside = false;
-					gridPoint = Vector3r(xmin + (xmax-xmin)*(ii+.5)/numPoints1D,ymin + (ymax-ymin)*(jj+.5)/numPoints1D,zmin + (zmax-zmin)*(kk+.5)/numPoints1D);
-					FOREACH(MemberMap::value_type& mm, members){
-						const Body::id_t& memberId=mm.first;
-						const shared_ptr<Body>& member=Body::byId(memberId,scene);
-						assert(member->isClumpMember());
-						if (member->shape->getClassIndex() ==  Sph_Index){//clump member should be a sphere
-							const Sphere* sphere = YADE_CAST<Sphere*> (member->shape.get());
-							if ((gridPoint - member->state->pos).squaredNorm() <= pow(sphere->radius,2.)) { isInside = true; break; }
-						}
-					}
-					if (isInside) c_in += 1;
-				}
-			}
-		}
-		//return estimated volume:
-		Real vol_estimated = ((1.*c_in)/(1.*pow(numPoints1D,3.)))*abs(xmax-xmin)*abs(ymax-ymin)*abs(zmax-zmin);
-		if (vol_estimated <= 0.0) {PyErr_Warn(PyExc_UserWarning,("Something went wrong in getClumpVolume method (clump volume <= 0 detected for clump with id "+lexical_cast<string>(b->getId())+").").c_str()); return 0;}
-		else return vol_estimated;
-	}
-	python::list adaptClumpMasses(python::list excludeList, int num_tries){
-		python::list ret;
-		Scene* scene(Omega::instance().getScene().get());	// get scene
-		shared_ptr<Sphere> sph (new Sphere);
-		int Sph_Index = sph->getClassIndexStatic();		// get sphere index for checking if bodies are spheres
-		//convert excludeList to a c++ list
-		vector<Body::id_t> excludeListC;
-		for (int ii = 0; ii < python::len(excludeList); ii++) excludeListC.push_back(python::extract<Body::id_t>(excludeList[ii])());
-		Real volClump, estimatedMass, radTmp, volSum, memberMass, inertiaTmp;
-		FOREACH(const shared_ptr<Body>& b, *proxee){
-			if ( ( !(std::find(excludeListC.begin(), excludeListC.end(), b->getId()) != excludeListC.end()) ) && (b->isClump()) ){
-				volClump = getClumpVolume(b,num_tries);
-				const shared_ptr<Clump>& clump=YADE_PTR_CAST<Clump>(b->shape);
-				std::map<Body::id_t,Se3r>& members = clump->members;
-				volSum = 0.0;
-				estimatedMass = 0.0;
-				for (int ii = 0; ii < 2; ii++){
-					FOREACH(MemberMap::value_type& mm, members){
-						const Body::id_t& memberId=mm.first;
-						const shared_ptr<Body>& member=Body::byId(memberId,scene);
-						assert(member->isClumpMember());
-						radTmp = 0.0;
-						if (member->shape->getClassIndex() ==  Sph_Index){//clump member should be a sphere
-							const Sphere* sphere = YADE_CAST<Sphere*> (member->shape.get());
-							radTmp = sphere->radius;
-						}
-						if (ii == 0) volSum += (4./3.)*Mathr::PI*pow(radTmp,3.);
-						else {
-							shared_ptr<Material> matTmp = member->material;
-							memberMass = (volClump/volSum)*(4./3.)*Mathr::PI*pow(radTmp,3.)*matTmp->density;
-							member->state->mass = memberMass;//set vol. corrected mass for clump members
-							inertiaTmp = 2.0/5.0*memberMass*radTmp*radTmp;
-							member->state->inertia = Vector3r(inertiaTmp,inertiaTmp,inertiaTmp);
-							estimatedMass += memberMass;
-						}
-					}
-				}
-				Clump::updateProperties(b,/*intersecting*/ false);
-				ret.append(python::make_tuple(b->getId(),estimatedMass));
-			}
-		}
-		return ret;
-	}
 	Real getRoundness(python::list excludeList){
 		Scene* scene(Omega::instance().getScene().get());	// get scene
 		shared_ptr<Sphere> sph (new Sphere);
@@ -450,13 +352,13 @@ class pyBodyContainer{
 		vector<Body::id_t> excludeListC;
 		for (int ii = 0; ii < python::len(excludeList); ii++) excludeListC.push_back(python::extract<Body::id_t>(excludeList[ii])());
 		Real RC_sum = 0.0;	//sum of local roundnesses
-		Real R1, R2, vol_tmp;
+		Real R1, R2, vol, dens;
 		int c = 0;		//counter
 		FOREACH(const shared_ptr<Body>& b, *proxee){
 			if ( !(std::find(excludeListC.begin(), excludeListC.end(), b->getId()) != excludeListC.end()) ) {
 				if ((b->shape->getClassIndex() ==  Sph_Index) && (b->isStandalone())) { RC_sum += 1.0; c += 1; }
 				if (b->isClump()){
-					R2 = 0.0;
+					R2 = 0.0; dens = 0.0; vol = 0.0;
 					const shared_ptr<Clump>& clump=YADE_PTR_CAST<Clump>(b->shape);
 					std::map<Body::id_t,Se3r>& members = clump->members;
 					FOREACH(MemberMap::value_type& mm, members){
@@ -466,10 +368,11 @@ class pyBodyContainer{
 						if (member->shape->getClassIndex() ==  Sph_Index){//clump member should be a sphere
 							const Sphere* sphere = YADE_CAST<Sphere*> (member->shape.get());
 							R2 = max((member->state->pos - b->state->pos).norm() + sphere->radius, R2);	//get minimum radius of a sphere, that imbeds clump
+							dens = member->material->density;
 						}
 					}
-					vol_tmp = getClumpVolume(b,100000);//for RC an accuracy of +/- 1/100000 should be ok
-					R1 = pow((3.*vol_tmp)/(4.*Mathr::PI),1./3.);	//get theoretical radius of a sphere, with same volume as clump
+					if (dens > 0.) vol = b->state->mass/dens;
+					R1 = pow((3.*vol)/(4.*Mathr::PI),1./3.);	//get theoretical radius of a sphere, with same volume as clump
 					if (R2 < R1) {PyErr_Warn(PyExc_UserWarning,("Something went wrong in getRoundness method (R2 < R1 detected).")); return 0;}
 					RC_sum += R1/R2; c += 1;
 				}
@@ -569,16 +472,20 @@ class pyForceContainer{
 	public:
 		pyForceContainer(shared_ptr<Scene> _scene): scene(_scene) { }
 		void checkId(long id){ if(id<0 || (size_t)id>=scene->bodies->size()){ PyErr_SetString(PyExc_IndexError, "Body id out of range."); python::throw_error_already_set(); /* never reached */ throw; } }
-		Vector3r force_get(long id){  checkId(id); return scene->forces.getForceSingle(id); /* scene->forces.sync(); return scene->forces.getForce(id); */}
-		Vector3r torque_get(long id){ checkId(id); return scene->forces.getTorqueSingle(id); }
-		Vector3r move_get(long id){   checkId(id); return scene->forces.getMoveSingle(id); }
-		Vector3r rot_get(long id){    checkId(id); return scene->forces.getRotSingle(id); }
-		void force_add(long id, const Vector3r& f){  checkId(id); scene->forces.addForce (id,f); }
-		void torque_add(long id, const Vector3r& t){ checkId(id); scene->forces.addTorque(id,t);}
+		Vector3r force_get(long id, bool sync){  checkId(id); if (!sync) return scene->forces.getForceSingle(id); scene->forces.sync(); return scene->forces.getForce(id);}
+		Vector3r torque_get(long id, bool sync){ checkId(id); if (!sync) return scene->forces.getTorqueSingle(id); scene->forces.sync(); return scene->forces.getTorque(id);}
+		Vector3r move_get(long id){ checkId(id); return scene->forces.getMoveSingle(id); }
+		Vector3r rot_get(long id){ checkId(id); return scene->forces.getRotSingle(id); }
+		void force_add(long id, const Vector3r& f, bool permanent){  checkId(id); if (!permanent) scene->forces.addForce (id,f); else scene->forces.addPermForce (id,f); }
+		void torque_add(long id, const Vector3r& t, bool permanent){ checkId(id); if (!permanent) scene->forces.addTorque(id,t); else scene->forces.addPermTorque(id,t);}
 		void move_add(long id, const Vector3r& t){   checkId(id); scene->forces.addMove(id,t);}
 		void rot_add(long id, const Vector3r& t){    checkId(id); scene->forces.addRot(id,t);}
+		Vector3r permForce_get(long id){  checkId(id); return scene->forces.getPermForce(id);}
+		Vector3r permTorque_get(long id){  checkId(id); return scene->forces.getPermTorque(id);}
+		void reset(bool resetAll) {scene->forces.reset(scene->iter,resetAll);}
 		long syncCount_get(){ return scene->forces.syncCount;}
 		void syncCount_set(long count){ scene->forces.syncCount=count;}
+		bool getPermForceUsed() {return scene->forces.getPermForceUsed();}
 };
 
 class pyMaterialContainer{
@@ -745,6 +652,19 @@ class pyOmega{
 	shared_ptr<Scene> scene_get(){ return OMEGA.getScene(); }
 	int addScene(){return OMEGA.addScene();}
 	void switchToScene(int i){OMEGA.switchToScene(i);}
+	string sceneToString(){
+		ostringstream oss;
+		yade::ObjectIO::save<typeof(OMEGA.getScene()),boost::archive::binary_oarchive>(oss,"scene",OMEGA.getScene());
+		oss.flush();
+		return oss.str();
+	}
+	void stringToScene(const string &sstring, string mark=""){
+		Py_BEGIN_ALLOW_THREADS; OMEGA.stop(); Py_END_ALLOW_THREADS;
+		assertScene();
+		OMEGA.memSavedSimulations[":memory:"+mark]=sstring;
+		OMEGA.sceneFile=":memory:"+mark;
+		load(OMEGA.sceneFile,true);
+	}
 
 	void save(std::string fileName,bool quiet=false){
 		assertScene();
@@ -879,9 +799,9 @@ BOOST_PYTHON_MODULE(wrapper)
 		.add_property("dt",&pyOmega::dt_get,&pyOmega::dt_set,"Current timestep (Δt) value.")
 		.add_property("dynDt",&pyOmega::dynDt_get,&pyOmega::dynDt_set,"Whether a :yref:`TimeStepper` is used for dynamic Δt control. See :yref:`dt<Omega.dt>` on how to enable/disable :yref:`TimeStepper`.")
 		.add_property("dynDtAvailable",&pyOmega::dynDtAvailable_get,"Whether a :yref:`TimeStepper` is amongst :yref:`O.engines<Omega.engines>`, activated or not.")
-		.def("load",&pyOmega::load,(py::arg("file"),py::arg("quiet")=false),"Load simulation from file.")
+		.def("load",&pyOmega::load,(py::arg("file"),py::arg("quiet")=false),"Load simulation from file. The file should be :yref:`saved<Omega.save>` in the same version of Yade, otherwise compatibility is not guaranteed.")
 		.def("reload",&pyOmega::reload,(py::arg("quiet")=false),"Reload current simulation")
-		.def("save",&pyOmega::save,(py::arg("file"),py::arg("quiet")=false),"Save current simulation to file (should be .xml or .xml.bz2)")
+		.def("save",&pyOmega::save,(py::arg("file"),py::arg("quiet")=false),"Save current simulation to file (should be .xml or .xml.bz2). The file should be :yref:`loaded<Omega.load>` in the same version of Yade, otherwise compatibility is not guaranteed.")
 		.def("loadTmp",&pyOmega::loadTmp,(py::arg("mark")="",py::arg("quiet")=false),"Load simulation previously stored in memory by saveTmp. *mark* optionally distinguishes multiple saved simulations")
 		.def("saveTmp",&pyOmega::saveTmp,(py::arg("mark")="",py::arg("quiet")=false),"Save simulation to memory (disappears at shutdown), can be loaded later with loadTmp. *mark* optionally distinguishes different memory-saved simulations.")
 		.def("lsTmp",&pyOmega::lsTmp,"Return list of all memory-saved simulations.")
@@ -900,6 +820,8 @@ BOOST_PYTHON_MODULE(wrapper)
 		.def("addScene",&pyOmega::addScene,"Add new scene to Omega, returns its number")
 		.def("switchToScene",&pyOmega::switchToScene,"Switch to defined scene. Default scene has number 0, other scenes have to be created by addScene method.")
 		.def("switchScene",&pyOmega::switchScene,"Switch to alternative simulation (while keeping the old one). Calling the function again switches back to the first one. Note that most variables from the first simulation will still refer to the first simulation even after the switch\n(e.g. b=O.bodies[4]; O.switchScene(); [b still refers to the body in the first simulation here])")
+		.def("sceneToString",&pyOmega::sceneToString,"Return the entire scene as a string. Equivalent to using O.save(...) except that the scene goes to a string instead of a file. (see also stringToScene())")
+		.def("stringToScene",&pyOmega::stringToScene,(python::arg("mark")=""),"Load simulation from a string passed as argument (see also sceneToString).")
 		.def("labeledEngine",&pyOmega::labeled_engine_get,"Return instance of engine/functor with the given label. This function shouldn't be called by the user directly; every ehange in O.engines will assign respective global python variables according to labels.\n\nFor example:\n\n\t *O.engines=[InsertionSortCollider(label='collider')]*\n\n\t *collider.nBins=5 # collider has become a variable after assignment to O.engines automatically*")
 		.def("resetTime",&pyOmega::resetTime,"Reset simulation time: step number, virtual and real time. (Doesn't touch anything else, including timings).")
 		.def("plugins",&pyOmega::plugins_get,"Return list of all plugins registered in the class factory.")
@@ -938,12 +860,11 @@ BOOST_PYTHON_MODULE(wrapper)
 		.def("__iter__",&pyBodyContainer::pyIter)
 		.def("append",&pyBodyContainer::append,"Append one Body instance, return its id.")
 		.def("append",&pyBodyContainer::appendList,"Append list of Body instance, return list of ids")
-		.def("appendClumped",&pyBodyContainer::appendClump,"Append given list of bodies as a clump (rigid aggregate); returns a tuple of ``(clumpId,[memberId1,memberId2,...])``.")
-		.def("clump",&pyBodyContainer::clump,"Clump given bodies together (creating a rigid aggregate); returns ``clumpId``.")
-		.def("addToClump",&pyBodyContainer::addToClump,"Add body b to an existing clump c. c must be clump and b may not be a clump member of c.\n\nSee **/examples/clumps/addToClump-example.py** for an example script.\n\n.. note:: If b is a clump itself, then all members will be added to c and b will be deleted. If b is a clump member of clump d, then all members from d will be added to c and d will be deleted. If you need to add just clump member b, :yref:`release<BodyContainer.releaseFromClump>` this member from d first.")
+		.def("appendClumped",&pyBodyContainer::appendClump,"Append given list of bodies as a clump (rigid aggregate); returns a tuple of ``(clumpId,[memberId1,memberId2,...])``. Clump masses and inertia are adapted automatically. If clump members are overlapping this is done by integration/summation over mass points using a regular grid of cells. For non-overlapping members inertia of the clump is the sum of inertias from members.")
+		.def("clump",&pyBodyContainer::clump,"Clump given bodies together (creating a rigid aggregate); returns ``clumpId``. Clump masses and inertia are adapted automatically (see :yref:`appendClumped()<BodyContainer.appendClumped>`).")
+		.def("addToClump",&pyBodyContainer::addToClump,"Add body b (or a list of bodies) to an existing clump c. c must be clump and b may not be a clump member of c.\n\nSee **/examples/clumps/addToClump-example.py** for an example script.\n\n.. note:: If b is a clump itself, then all members will be added to c and b will be deleted. If b is a clump member of clump d, then all members from d will be added to c and d will be deleted. If you need to add just clump member b, :yref:`release<BodyContainer.releaseFromClump>` this member from d first.")
 		.def("releaseFromClump",&pyBodyContainer::releaseFromClump,"Release body b from clump c. b must be a clump member of c.\n\nSee **/examples/clumps/releaseFromClump-example.py** for an example script.\n\n.. note:: If c contains only 2 members b will not be released and a warning will appear. In this case clump c should be :yref:`erased<BodyContainer.erase>`.")
 		.def("replaceByClumps",&pyBodyContainer::replaceByClumps,"Replace spheres by clumps using a list of clump templates and a list of amounts; returns a list of tuples: ``[(clumpId1,[memberId1,memberId2,...]),(clumpId2,[memberId1,memberId2,...]),...]``. A new clump will have the same volume as the sphere, that was replaced (clump volume/mass/inertia is accounting for overlaps assuming that there are only pair overlaps, to adapt masses of clumps with multiple overlaps use :yref:`adaptClumpMasses()<BodyContainer.adaptClumpMasses>`). \n\n\t *O.bodies.replaceByClumps( [utils.clumpTemplate([1,1],[.5,.5])] , [.9] ) #will replace 90 % of all standalone spheres by 'dyads'*\n\nSee **/examples/clumps/replaceByClumps-example.py** for an example script.")
-		.def("adaptClumpMasses",&pyBodyContainer::adaptClumpMasses,"Adapt clump masses and inertia via deterministic Monte-Carlo algorithm, that estimates clump volume using a regular grid of points; returns a list of tuples: ``[(clumpId1,estimatedMassOfClump1),(clumpId2,estimatedMassOfClump2),...]``.\n\nIt is recommended to use this method, when clumps where created via :yref:`clump()<BodyContainer.clump>` or :yref:`appendClumped()<BodyContainer.appendClumped>`. This method could also be used to adapt masses of clumps with multiple overlaps (e.g. triple sections). Bodies can be excluded from the calculation by giving a list of ids: *O.bodies.adaptClumpMasses([ids],1000000) #number of grid points is set to 1000000*\n\nSee **/examples/clumps/adaptClumpMasses-example.py** for an example script.")
 		.def("getRoundness",&pyBodyContainer::getRoundness,"Returns roundness coefficient RC = R2/R1. R1 is the theoretical radius of a sphere, with same volume as clump. R2 is the minimum radius of a sphere, that imbeds clump. If just spheres are present RC = 1. If clumps are present 0 < RC < 1. Bodies can be excluded from the calculation by giving a list of ids: *O.bodies.getRoundness([ids])*.\n\nSee **/examples/clumps/replaceByClumps-example.py** for an example script.")
 		.def("clear", &pyBodyContainer::clear,"Remove all bodies (interactions not checked)")
 		.def("erase", &pyBodyContainer::erase,"Erase body with the given id; all interaction will be deleted by InteractionLoop in the next step.")
@@ -968,15 +889,19 @@ BOOST_PYTHON_MODULE(wrapper)
 		.def("next",&pyInteractionIterator::pyNext);
 
 	python::class_<pyForceContainer>("ForceContainer",python::init<pyForceContainer&>())
-		.def("f",&pyForceContainer::force_get,(python::arg("id")),"Force applied on body.")
-		.def("t",&pyForceContainer::torque_get,(python::arg("id")),"Torque applied on body.")
-		.def("m",&pyForceContainer::torque_get,(python::arg("id")),"Deprecated alias for t (torque).")
+		.def("f",&pyForceContainer::force_get,(python::arg("id"),python::arg("sync")=false),"Force applied on body. For clumps in openMP, synchronize the force container with sync=True, else the value will be wrong.")
+		.def("t",&pyForceContainer::torque_get,(python::arg("id"),python::arg("sync")=false),"Torque applied on body. For clumps in openMP, synchronize the force container with sync=True, else the value will be wrong.")
+		.def("m",&pyForceContainer::torque_get,(python::arg("id"),python::arg("sync")=false),"Deprecated alias for t (torque).")
 		.def("move",&pyForceContainer::move_get,(python::arg("id")),"Displacement applied on body.")
 		.def("rot",&pyForceContainer::rot_get,(python::arg("id")),"Rotation applied on body.")
-		.def("addF",&pyForceContainer::force_add,(python::arg("id"),python::arg("f")),"Apply force on body (accumulates).")
-		.def("addT",&pyForceContainer::torque_add,(python::arg("id"),python::arg("t")),"Apply torque on body (accumulates).")
+		.def("addF",&pyForceContainer::force_add,(python::arg("id"),python::arg("f"),python::arg("permanent")=false),"Apply force on body (accumulates).\n\n # If permanent=false (default), the force applies for one iteration, then it is reset by ForceResetter. \n # If permanent=true, it persists over iterations, until it is overwritten by another call to addF(id,f,True) or removed by reset(resetAll=True). The permanent force on a body can be checked with permF(id).")
+		.def("addT",&pyForceContainer::torque_add,(python::arg("id"),python::arg("t"),python::arg("permanent")=false),"Apply torque on body (accumulates). \n\n # If permanent=false (default), the torque applies for one iteration, then it is reset by ForceResetter. \n # If permanent=true, it persists over iterations, until it is overwritten by another call to addT(id,f,True) or removed by reset(resetAll=True). The permanent torque on a body can be checked with permT(id).")
+		.def("permF",&pyForceContainer::permForce_get,(python::arg("id")),"read the value of permanent force on body (set with setPermF()).")
+		.def("permT",&pyForceContainer::permTorque_get,(python::arg("id")),"read the value of permanent torque on body (set with setPermT()).")
 		.def("addMove",&pyForceContainer::move_add,(python::arg("id"),python::arg("m")),"Apply displacement on body (accumulates).")
 		.def("addRot",&pyForceContainer::rot_add,(python::arg("id"),python::arg("r")),"Apply rotation on body (accumulates).")
+		.def("reset",&pyForceContainer::reset,(python::arg("resetAll")=true),"Reset the force container, including user defined permanent forces/torques. resetAll=False will keep permanent forces/torques unchanged.")
+		.def("getPermForceUsed",&pyForceContainer::getPermForceUsed,"Check wether permanent forces are present.")
 		.add_property("syncCount",&pyForceContainer::syncCount_get,&pyForceContainer::syncCount_set,"Number of synchronizations  of ForceContainer (cummulative); if significantly higher than number of steps, there might be unnecessary syncs hurting performance.")
 		;
 

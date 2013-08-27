@@ -214,7 +214,7 @@ void NewtonIntegrator::action()
 	#ifdef YADE_OPENMP
 		FOREACH(const Real& thrMaxVSq, threadMaxVelocitySq) { maxVelocitySq=max(maxVelocitySq,thrMaxVSq); }
 	#endif
-	if(scene->isPeriodic) { prevCellSize=scene->cell->getSize(); prevVelGrad=scene->cell->velGrad; }
+	if(scene->isPeriodic) { prevCellSize=scene->cell->getSize(); prevVelGrad=scene->cell->prevVelGrad=scene->cell->velGrad; }
 }
 
 void NewtonIntegrator::leapfrogTranslate(State* state, const Body::id_t& id, const Real& dt){
@@ -283,7 +283,7 @@ void NewtonIntegrator::set_densityScaling(bool dsc) {
 		if (ts) {
 			ts->densityScaling=dsc;
 			densityScaling=dsc;
-			LOG_WARN("GlobalStiffnessTimeStepper found in O.engines and adjusted to match this setting. Revert in the the timestepper if you don't want the scaling adjusted automaticaly.");
+			LOG_WARN("GlobalStiffnessTimeStepper found in O.engines and adjusted to match this setting. Revert in the the timestepper if you don't want the scaling adjusted automatically.");
 			return;
 		}
 	} LOG_WARN("GlobalStiffnessTimeStepper not found in O.engines. Density scaling will have no effect unless a scaling is specified manually for some bodies");

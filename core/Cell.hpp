@@ -16,7 +16,7 @@ The transformation is split between "normal" part and "rotation/shear" part for 
 #include<yade/lib/serialization/Serializable.hpp>
 #include<yade/lib/base/Math.hpp>
 
-#include<yade/pkg/dem/Shop.hpp>
+//#include<yade/pkg/dem/Shop.hpp>
 
 class Cell: public Serializable{
 	public:
@@ -143,8 +143,8 @@ class Cell: public Serializable{
 	Matrix3r getRightStretch() { Matrix3r R,U; computePolarDecOfDefGrad(R,U); return trsf*R.transpose(); }
 
 	// stress measures
-	Matrix3r getStress() { return Shop::getStress(); }
-	Matrix3r getCauchyStress() { Matrix3r s=getStress(); return .5*(s+s.transpose()); }
+	//Matrix3r getStress() { return Shop::getStress(); }
+	//Matrix3r getCauchyStress() { Matrix3r s=getStress(); return .5*(s+s.transpose()); }
 
 	enum { HOMO_NONE=0, HOMO_POS=1, HOMO_VEL=2, HOMO_VEL_2ND=3 };
 	YADE_CLASS_BASE_DOC_ATTRS_DEPREC_INIT_CTOR_PY(Cell,Serializable,"Parameters of periodic boundary conditions. Only applies if O.isPeriodic==True.",
@@ -170,7 +170,7 @@ class Cell: public Serializable{
 		.add_property("refSize",&Cell::getRefSize,&Cell::setRefSize,"Reference size of the cell (lengths of initial cell vectors, i.e. column norms of :yref:`hSize<Cell.hSize>`).\n\n.. note:: Modifying this value is deprecated, use :yref:`setBox<Cell.setBox>` instead.\n\n")
 		// useful properties
 		.add_property("trsf",&Cell::getTrsf,&Cell::setTrsf,"Current transformation matrix of the cell, obtained from time integration of :yref:`Cell.velGrad`.")
-		.add_property("velGrad",&Cell::getVelGrad,&Cell::setVelGrad,"Velocity gradient of the transformation; used in :yref:`NewtonIntegrator`. Values of :yref:`velGrad<Cell.velGrad>` accumulate in :yref:`trsf<Cell.trsf>` at every step.\n\n NOTE: changing velGrad at the begining of a simulation loop would lead to inacurate integration for one step, as it should normaly be changed after the contact laws (but before Newton). To avoid this problem, assignment is deferred automaticaly. The target value typed in terminal is actually stored in :yref:`Cell.nextVelGrad` and will be applied right in time by Newton integrator.")
+		.add_property("velGrad",&Cell::getVelGrad,&Cell::setVelGrad,"Velocity gradient of the transformation; used in :yref:`NewtonIntegrator`. Values of :yref:`velGrad<Cell.velGrad>` accumulate in :yref:`trsf<Cell.trsf>` at every step.\n\n NOTE: changing velGrad at the beginning of a simulation loop would lead to inacurate integration for one step, as it should normaly be changed after the contact laws (but before Newton). To avoid this problem, assignment is deferred automatically. The target value typed in terminal is actually stored in :yref:`Cell.nextVelGrad` and will be applied right in time by Newton integrator.")
 		.def_readonly("size",&Cell::getSize_copy,"Current size of the cell, i.e. lengths of the 3 cell lateral vectors contained in :yref:`Cell.hSize` columns. Updated automatically at every step.")
 		.add_property("volume",&Cell::getVolume,"Current volume of the cell.")
 		// functions

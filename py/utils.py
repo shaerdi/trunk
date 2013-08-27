@@ -545,7 +545,7 @@ def vmData():
 	l=_procStatus('VmData'); ll=l.split(); assert(ll[2]=='kB')
 	return int(ll[1])
 
-def uniaxialTestFeatures(filename=None,areaSections=10,axis=-1,**kw):
+def uniaxialTestFeatures(filename=None,areaSections=10,axis=-1,distFactor=2.2,**kw):
 	"""Get some data about the current packing useful for uniaxial test:
 
 #. Find the dimensions that is the longest (uniaxial loading axis)
@@ -571,7 +571,7 @@ def uniaxialTestFeatures(filename=None,areaSections=10,axis=-1,**kw):
 	assert(axis in (0,1,2))
 	import numpy
 	areas=[approxSectionArea(coord,axis) for coord in numpy.linspace(mm[axis],mx[axis],num=10)[1:-1]]
-	negIds,posIds=negPosExtremeIds(axis=axis,distFactor=2.2)
+	negIds,posIds=negPosExtremeIds(axis=axis,distFactor=distFactor)
 	return {'negIds':negIds,'posIds':posIds,'axis':axis,'area':min(areas)}
 
 def voxelPorosityTriaxial(triax,resolution=200,offset=0):
@@ -855,7 +855,7 @@ def psd(bins=5, mass=True, mask=-1):
 	:param int mask: :yref:`Body.mask` for the body
 	:return:
 		* binsSizes: list of bin's sizes
-		* binsProc: how much material (in procents) are in the bin, cumulative
+		* binsProc: how much material (in percents) are in the bin, cumulative
 		* binsSumCum: how much material (in units) are in the bin, cumulative
 
 		binsSizes, binsProc, binsSumCum
@@ -876,13 +876,12 @@ def psd(bins=5, mass=True, mask=-1):
 	binsMass = numpy.zeros(bins)
 	binsNumbers = numpy.zeros(bins)
 	
-		
 	for b in O.bodies:
 		if (isinstance(b.shape,Sphere) and ((mask<0) or ((b.mask&mask)<>0))):
 			d=2*b.shape.radius
 			
 			basketId = int(math.floor( (d-minD) / deltaBinD ) )
-			if (d == maxD): basketId = bins-1												 #If the diametr equals the maximal diameter, put the particle into the last bin
+			if (d == maxD): basketId = bins-1												 #If the diameter equals the maximal diameter, put the particle into the last bin
 			binsMass[basketId] = binsMass[basketId] + b.state.mass		#Put masses into the bin 
 			binsNumbers[basketId] = binsNumbers[basketId] + 1					#Put numbers into the bin 
 			

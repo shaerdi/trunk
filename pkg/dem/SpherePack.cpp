@@ -207,10 +207,10 @@ long SpherePack::makeCloud(Vector3r mn, Vector3r mx, Real rMean, Real rRelFuzz, 
 				if (mode!=RDIST_RMEAN) {
 					//if rMean is not imposed, then we call makeCloud recursively, scaling the PSD down until the target num is obtained
 					Real nextPoro = porosity+(1-porosity)/10.;
-					LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres was added, although you requested "<<num<<". Trying again with porosity "<<nextPoro<<". The size distribution is being scaled down");
+					LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres were added, although you requested "<<num<<". Trying again with porosity "<<nextPoro<<". The size distribution is being scaled down");
 					pack.clear();
 					return makeCloud(mn, mx, -1., rRelFuzz, num, periodic, nextPoro, psdSizes, psdCumm, distributeMass,seed,hSizeFound?hSize:Matrix3r::Zero());}
-				else LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres was added, although you requested "<<num<<".");
+				else LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres were added, although you requested "<<num<<".");
 			}
 			return i;}
 	}
@@ -270,7 +270,7 @@ py::tuple SpherePack::psd(int bins, bool mass) const {
 		int bin=int(bins*(2*s.r-minD)/(maxD-minD)); bin=min(bin,bins-1); // to make sure
 		if (mass) hist[bin]+=pow(s.r,3)/vol; else hist[bin]+=1./N;
 	}
-	for(int i=0; i<bins; i++) cumm[i+1]=min(1.,cumm[i]+hist[i]); // cumm[i+1] is OK, cumm.size()==bins+1
+	for(int i=0; i<bins; i++) cumm[i+1]=min((Real)1.,cumm[i]+hist[i]); // cumm[i+1] is OK, cumm.size()==bins+1
 	return py::make_tuple(edges,cumm);
 }
 
@@ -365,7 +365,7 @@ long SpherePack::particleSD(Vector3r mn, Vector3r mx, Real rMean, bool periodic,
 				if(!overlap) { pack.push_back(Sph(c,r)); break; }
 			}
 			if (t==maxTry) {
-				if(numbers[ii]>0) LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres was added, although you requested "<<numbers[ii]<<" with radius "<<radii[ii]);
+				if(numbers[ii]>0) LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres were added, although you requested "<<numbers[ii]<<" with radius "<<radii[ii]);
 				return i;
 			}
 		}
@@ -418,7 +418,7 @@ long SpherePack::particleSD_2d(Vector2r mn, Vector2r mx, Real rMean, bool period
 				if(!overlap) { pack.push_back(Sph(c,r)); break; }
 			}
 			if (t==maxTry) {
-				if(numbers[ii]>0) LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres was added, although you requested "<<numbers[ii]<<" with radius "<<radii[ii]);
+				if(numbers[ii]>0) LOG_WARN("Exceeded "<<maxTry<<" tries to insert non-overlapping sphere to packing. Only "<<i<<" spheres were added, although you requested "<<numbers[ii]<<" with radius "<<radii[ii]);
 				return i;
 			}
 		}
@@ -448,19 +448,18 @@ long SpherePack::makeClumpCloud(const Vector3r& mn, const Vector3r& mx, const ve
 	const int maxTry=200;
 	int nGen=0; // number of clumps generated
 	// random point coordinate generator, with non-zero margins if aperiodic
-	static boost::minstd_rand randGen(seed!=0?seed:(int)TimingInfo::getNow(/* get the number even if timing is disabled globally */ true));
-	typedef boost::variate_generator<boost::minstd_rand&, boost::uniform_real<> > UniRandGen;
-	static UniRandGen rndX(randGen,boost::uniform_real<>(mn[0],mx[0]));
-	static UniRandGen rndY(randGen,boost::uniform_real<>(mn[1],mx[1]));
-	static UniRandGen rndZ(randGen,boost::uniform_real<>(mn[2],mx[2]));
-	static UniRandGen rndUnit(randGen,boost::uniform_real<>(0,1));
+ 	static boost::minstd_rand randGen(seed!=0?seed:(int)TimingInfo::getNow(/* get the number even if timing is disabled globally */ true));
+ 	static boost::variate_generator<boost::minstd_rand&, boost::uniform_real<Real> > rnd(randGen, boost::uniform_real<Real>(0,1));
 	while(nGen<num || num<0){
-		int clumpChoice=rand()%clumps.size();
+		int clumpChoice=(int)(rnd()*(clumps.size()-1e-20));
 		int tries=0;
 		while(true){ // check for tries at the end
-			Vector3r pos(rndX(),rndY(),rndZ()); // random point
+			Vector3r pos(0.,0.,0.);
+			for(int i=0;i<3;i++){
+				pos[i]=rnd()*(mx[i]-mn[i])+mn[i];
+			}
 			// TODO: check this random orientation is homogeneously distributed
-			Quaternionr ori(rndUnit(),rndUnit(),rndUnit(),rndUnit()); ori.normalize();
+			Quaternionr ori(rnd(),rnd(),rnd(),rnd()); ori.normalize();
 			// copy the packing and rotate
 			SpherePack C(clumps[clumpChoice]); C.rotateAroundOrigin(ori); C.translate(pos);
 			const Real& rad(boundRad[clumpChoice]);

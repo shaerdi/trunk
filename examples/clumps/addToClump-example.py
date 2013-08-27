@@ -48,6 +48,8 @@ def getClumpInfo():
 			keys = b.shape.members.keys()
 			for ii in range(0,len(keys)):
 				print '- Body ',keys[ii]
+			print 'inertia:',b.state.inertia
+			print 'mass:',b.state.mass,'\n'
 
 
 #### show how to use addToClump():
@@ -60,13 +62,13 @@ print '\nSTATE before adding sphere to clump ------------'
 getClumpInfo()
 
 #add a sphere to the clump:
-O.bodies.addToClump(id_new,id_clump1)
+O.bodies.addToClump([id_new],id_clump1)
 
 print '\nSTATE after adding sphere to clump ------------'
 getClumpInfo()
 
 #add a clump to a clump:
-O.bodies.addToClump(id_clump2,id_clump1)
+O.bodies.addToClump([id_clump2],id_clump1)
 
 print '\nSTATE after adding the second clump to clump ------------'
 getClumpInfo()

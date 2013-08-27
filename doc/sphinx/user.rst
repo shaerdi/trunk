@@ -603,7 +603,7 @@ In most simulations, only one ``Law2`` functor will be in use; it is possible, t
 
 .. note:: As in the case of ``Ip2`` functors, receiving a combination of :yref:`IGeom` and :yref:`IPhys` which is not handled by any ``Law2`` functor is an error.
 
-.. warning:: Many ``Law2`` exist in Yade, and new ones can appear at any time. In some cases different functors are only different implementations of the same contact law (e.g. :yref:`Law2_ScGeom_FrictPhys_CundallStrack` and :yref:`Law2_L3Geom_FrictPhys_ElPerfPl`). Also, sometimes, the peculiarity of one functor may be reproduced as a special case of a more general one. Therefore, for a given constitutive behavior, the user may have the choice between different functors. It is strongly recommended to favor the most used and most validated implementation when facing such choice. A list of available functors classified from mature to unmaintained is updated `here <https://yade-dem.org/wiki/ConstitutiveLaws`_ to guide this choice.
+.. warning:: Many ``Law2`` exist in Yade, and new ones can appear at any time. In some cases different functors are only different implementations of the same contact law (e.g. :yref:`Law2_ScGeom_FrictPhys_CundallStrack` and :yref:`Law2_L3Geom_FrictPhys_ElPerfPl`). Also, sometimes, the peculiarity of one functor may be reproduced as a special case of a more general one. Therefore, for a given constitutive behavior, the user may have the choice between different functors. It is strongly recommended to favor the most used and most validated implementation when facing such choice. A list of available functors classified from mature to unmaintained is updated `here <https://yade-dem.org/wiki/ConstitutiveLaws>`_ to guide this choice.
 
 Examples
 ^^^^^^^^
@@ -659,8 +659,6 @@ Motion constraints
 
      utils.sphere([x,y,z],radius,dynamic=False)
 
-  .. note:: There is an open `bug #398089 <https://bugs.launchpad.net/yade/+bug/398089>`_ to define exactly what the ``dynamic`` flag does. Please read it before writing a new engine relying on this flag.
-
 * :yref:`State.blockedDOFs` permits selective blocking
   of any of 6 degrees of freedom in global space. For instance, a sphere can be made to move only in the xy plane by saying:
 
@@ -671,9 +669,9 @@ Motion constraints
 
      Yade [1]: O.bodies.append(utils.sphere((0,0,0),1))
 
-     Yade [1]: O.bodies[0].state.blockedDOFs=['z','rx','ry']
+     Yade [1]: O.bodies[0].state.blockedDOFs='zXY'
 
-  In contrast to :yref:`Body.dynamic`, :yref:`blockedDOFs<State.blockedDOFs>` will only block forces (and acceleration) in that direction being effective; if you prescribed linear or angular velocity, they will be applied regardless of :yref:`blockedDOFs<State.blockedDOFs>`. (This is also related to `bug #398089 <https://bugs.launchpad.net/yade/+bug/398089>`_ mentioned above)
+  In contrast to :yref:`Body.dynamic`, :yref:`blockedDOFs<State.blockedDOFs>` will only block forces (and acceleration) in that direction being effective; if you prescribed linear or angular velocity, they will be applied regardless of :yref:`blockedDOFs<State.blockedDOFs>`. It also implies that if the velocity is not zero when degrees of freedom are blocked the body will keep moving at the velocity it has at the time of blocking.
 
 It might be desirable to constrain motion of some particles constructed from a generated sphere packing, following some condition, such as being at the bottom of a specimen; this can be done by looping over all bodies with a conditional::
 
@@ -690,6 +688,40 @@ Arbitrary spatial predicates introduced above can be expoited here as well::
 	   # ask the predicate if we are inside
 	   if pred(b.state.pos,b.shape.radius): b.dynamic=False
 
+.. _imposing_motion_force:
+
+Imposing motion and forces
+--------------------------
+
+Imposed velocity
+^^^^^^^^^^^^^^^^
+
+If a degree of freedom is blocked and a velocity is assigned along that direction (translational or rotational velocity), then the body will move at constant velocity. This is the simpler and recommended method to impose the motion of a body. This, for instance, will result in a constant velocity along $x$::
+
+	O.bodies.append(utils.sphere((0,0,0),1))
+	O.bodies[0].state.blockedDOFs='x'
+	O.bodies[0].state.vel=(10,0,0)
+
+Conversely, modifying the position directly is likely to break Yade's algorithms, especially those related to collision detection and contact laws, as they are based oon bodies velocities. Therefore, unless you really know what you are doing, don't do that for imposing a motion::
+
+	O.bodies.append(utils.sphere((0,0,0),1))
+	O.bodies[0].state.blockedDOFs='x'
+	O.bodies[0].state.pos=10*O.dt #REALLY BAD! Don't assign position
+
+Imposed force
+^^^^^^^^^^^^^
+
+Applying a force or a torque on a body is done via functions of the :yref:`ForceContainer`. It is as simple as this::
+
+	O.forces.addF(0,(1,0,0)) #applies for one step
+  
+By default, the force applies for one time step only, and is resetted at the beginning of each step. For this reason, imposing a force at the begining of one step will have no effect at all, since it will be immediatly resetted. The only way is to place a :yref:`PyRunner` inside the simulation loop.
+
+Applying the force permanently is possible with an optional argument (in this case it does not matter if the command comes at the begining of the time step)::
+
+	O.forces.addF(0,(1,0,0),permanent=True) #applies permanently
+
+The force  will persist across iterations, until it is overwritten by another call to ``O.forces.addF(id,f,True)`` or erased by ``O.forces.reset(resetAll=True)``. The permanent force on a body can be checked with ``O.forces.permF(id)``.
 
 Boundary controllers
 --------------------
@@ -714,7 +746,7 @@ Engines deriving from :yref:`PartialEngine` define the :yref:`ids<PartialEngine.
 * :yref:`ForceEngine` and :yref:`TorqueEngine` applying given values of force/torque on subscribed bodies at every step.
 * :yref:`StepDisplacer` for applying generalized displacement delta at every timestep; designed for precise control of motion when testing constitutive laws on 2 particles.
 
-If you need an engine applying non-constant value instead, there are several interpolating engines (:yref:`InterpolatingDirectedForceEngine` for applying force with varying magnitude, :yref:`InterpolatingSpiralEngine` for applying spiral displacement with varying angular velocity and possibly others); writing a new interpolating engine is rather simple using examples of those that already exist.
+The real value of partial engines is if you need to prescribe complex types of force or displacement fields. For moving a body at constant velocity or for imposing a single force, the methods explained in `Imposing motion and forces`_ are much simpler. There are several interpolating engines (:yref:`InterpolatingDirectedForceEngine` for applying force with varying magnitude, :yref:`InterpolatingSpiralEngine` for applying spiral displacement with varying angular velocity and possibly others); writing a new interpolating engine is rather simple using examples of those that already exist.
 
 
 Convenience features
@@ -1019,9 +1051,11 @@ To avoid big range differences on the $y$ axis, it is possible to have left and 
 Exporting
 ^^^^^^^^^
 
-Plots can be exported to external files for later post-processing via that :yref:`yade.plot.saveGnuplot` function.
+Plots can be exported to external files for later post-processing via that :yref:`yade.plot.saveGnuplot` function. Note that all data you added via plot.addData is saved - even data that you don't plot live during simulation. 
+By editing the generated .gnuplot file you can plot any of the added Data afterwards.
 
-* Data file is saved (compressed using bzip2) separately from the gnuplot file, so any other programs can be used to process them. In particular, the ``numpy.genfromtxt`` (documented `here <http://docs.scipy.org/doc/numpy/reference/generated/numpy.genfromtxt.html>`_) can be useful to import those data back to python; the decompression happens automatically.
+
+* Data file is saved (compressed using bzip2) separately from the gnuplot file, so any other programs can be used to process them. In particular, the ``numpy.genfromtxt`` (`documented here <http://docs.scipy.org/doc/numpy/reference/generated/numpy.genfromtxt.html>`_) can be useful to import those data back to python; the decompression happens automatically.
 
 * The gnuplot file can be run through gnuplot to produce the figure; see :yref:`yade.plot.saveGnuplot` documentation for details.
 
@@ -1132,7 +1166,7 @@ Python prompt
 --------------
 ``TCP python prompt`` is telnet server with authenticated connection, providing full python command-line. It listens on port 9000, or higher if already occupied (by another yade instance, for example).
 
-Using the authentication cookie, connection can be made::
+Using the authentication cookie, connection can be made using telnet::
 
 	\$ telnet localhost 9000
 	Trying 127.0.0.1...
@@ -1154,7 +1188,7 @@ The python pseudo-prompt ``>>>`` lets you write commands to manipulate simulatio
 #. The (fake) ``>>>`` interpreter does not have rich interactive feature of IPython, which handles the usual command-line ``Yade [1]:``; therefore, you will have no command history, ``?`` help and so on.
 
 .. note::
-	By giving access to python interpreter, full control of the system (including reading user's files) is possible. For this reason, **connection are only allowed from localhost**, not over network remotely.
+	By giving access to python interpreter, full control of the system (including reading user's files) is possible. For this reason, **connection are only allowed from localhost**, not over network remotely. Of course you can log into the system via SSH over network to get remote access.
 
 .. warning::
 	Authentication cookie is trivial to crack via bruteforce attack. Although the listener stalls for 5 seconds after every failed login attempt (and disconnects), the cookie could be guessed by trial-and-error during very long simulations on a shared computer.
@@ -1176,7 +1210,7 @@ simulation script
 	:yref:`yade.utils.readParamsFromTable` knows which parameter file and which line to read by inspecting the ``PARAM_TABLE`` environment variable, set by the batch system.
 
 parameter table
-	simple text file, each line representing one parameter set. This file is read by :yref:`yade.utils.readParamsFromTable` (using :yref:`yade.utils.TableParamReader` class), called from simulation script, as explained above.
+	simple text file, each line representing one parameter set. This file is read by :yref:`yade.utils.readParamsFromTable` (using :yref:`yade.utils.TableParamReader` class), called from simulation script, as explained above. For better reading of the text file you can make use of tabulators, these will be ignored by :yref:`yade.utils.readParamsFromTable`. Parameters are not restricted to numerical values. You can also make use of strings by "quoting" them ('  ' may also be used instead of "  "). This can be useful for nominal parameters.
 
 The batch can be run as ::
 
@@ -1266,7 +1300,7 @@ information about job status changes is being printed, until::
 
 Separating output files from jobs
 ----------------------------------
-As one might output data to external files during simulation (using classes such as :yref:`VTKRecorder`, it is important to name files in such way that they are not overwritten by next (or concurrent) job in the same batch. A special tag ``O.tags['id']`` is provided for such purposes: it is comprised of date, time and PID, which makes it always unique (e.g. ``20100413T144723p7625``); additional advantage is that alphabetical order of the ``id`` tag is also chronological.
+As one might output data to external files during simulation (using classes such as :yref:`VTKRecorder`, it is important to name files in such way that they are not overwritten by next (or concurrent) job in the same batch. A special tag ``O.tags['id']`` is provided for such purposes: it is comprised of date, time and PID, which makes it always unique (e.g. ``20100413T144723p7625``); additional advantage is that alphabetical order of the ``id`` tag is also chronological. To add the used parameterset or if set the description of the job you could add O.tags['params'] to the filename.
 
 For smaller simulations, prepending all output file names with ``O.tags['id']`` can be sufficient:
 
@@ -1309,7 +1343,7 @@ Data are collected in usual way during the simulation (using :yref:`yade.plot.ad
 
 	print 'gnuplot',plot.saveGnuplot(O.tags['id'])
 
-and the end of the script, which prints::
+and the end of the script (even after utils.waitIfBatch()) , which prints::
 
 	gnuplot 20100413T144723p7625.gnuplot
 
@@ -1383,6 +1417,9 @@ Paraview is based on the `Visualization Toolkit <http://www.vtk.org>`_, which de
 * :yref:`fileName<VTKRecorder.fileName>` is the prefix for files being saved. In this case, output files will be named ``/tmp/p1-spheres.0.vtu`` and ``/tmp/p1-facets.0.vtu``, where the number is the number of iteration; many files are created, putting them in a separate directory is advisable.
 * :yref:`recorders<VTKRecorder.recorders>` determines what data to save (see the :yref:`documentation<VTKRecorder.recorders>`)
 
+:yref:`VTKExporter` plays a similar role, with the difference that it is more flexible. It will save any user defined variable associated to the bodies. 
+
+
 Loading data into Paraview
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -1396,8 +1433,8 @@ Click on the "Apply" button in the "Object inspector" sub-window to make loaded 
 .. _img-paraview-rendering-apply:
 .. figure:: fig/paraview-rendering-apply.png
 
-Rendering spherical particles
-"""""""""""""""""""""""""""""
+Rendering spherical particles. Glyphs
+"""""""""""""""""""""""""""""""""""""""""""
 
 .. |paraview-glyph-icon| image:: fig/paraview-glyph-icon.png
 
@@ -1411,6 +1448,19 @@ Spheres will only appear as points. To make them look as spheres, you have to ad
 
 After clicking "Apply", spheres will appear. They will be rendered over the original white points, which you can disable by clicking on the eye icon next to ``p1-spheres.*`` in the Pipeline browser.
 
+Rendering spherical particles. PointSprite
+"""""""""""""""""""""""""""""""""""""""""""
+
+Another opportunity to display spheres is an using *PointSprite* plugin. This technique requires much less RAM in comparison to Glyphs.
+
+* "Tools -> Manage Plugins"
+* "PointSprite_Plugin -> Load selected  -> Close"
+* Load VTU-files
+* "Representation -> Point Sprite"
+* "Point Sprite -> Scale By -> radii"
+* "Edit Radius Transfer Function -> Proportional -> Multiplier = 1.0 -> Close"
+
+
 Facet transparency
 """""""""""""""""""
 If you want to make facet objects transparent, select ``p1-facets.*`` in the Pipeline browser, then go to the Object inspector on the Display tab. Under "Style", you can set the "Opacity" value to something smaller than 1.
@@ -1419,6 +1469,48 @@ Animation
 """"""""""
 You can move between frames (snapshots that were saved) via the "Animation" menu. After setting the view angle, zoom etc to your satisfaction, the animation can be saved with *File/Save animation*.
 
+Micro-stress and micro-strain
+=============================
+It is sometimes useful to visualize a DEM simulation through equivalent strain fields or stress fields. This is possible with :yref:`TesselationWrapper`. This class handles the triangulation of spheres in a scene, build tesselation on request, and give access to computed quantities: volume, porosity and local deformation for each sphere. The definition of microstrain and microstress is at the scale of particle-centered subdomains shown below, as explained in [Catalano2013a]_ .
+
+.. figure:: fig/micro-domains.*
+
+Micro-strain
+------------
+Below is an output of the :yref:`defToVtk<TesselationWrapper::defToVtk>` function visualized with paraview (in this case Yade's TesselationWrapper was used to process experimental data obtained on sand by Edward Ando at Grenoble University, 3SR lab.). The output is visualized with paraview, as explained in the previous section. Similar results can be generated from simulations:
+
+.. code-block:: python
+
+	tt=TriaxialTest()
+	tt.generate("test.yade")
+	O.load("test.yade")
+	O.run(100,True)
+	TW=TesselationWrapper()
+	TW.triangulate()	#compute regular Delaunay triangulation, don’t construct tesselation
+	TW.computeVolumes()	#will silently tesselate the packing, then compute volume of each Voronoi cell
+	TW.volume(10)		#get volume associated to sphere of id 10
+	TW.setState(0)		#store current positions internaly for later use as the "0" state
+	O.run(100,True)		#make particles move a little (let's hope they will!)
+	TW.setState(1)		#store current positions internaly in the "1" (deformed) state
+	#Now we can define strain by comparing states 0 and 1, and average them at the particles scale
+	TW.defToVtk("strain.vtk")
+
+
+.. figure:: fig/localstrain.*
+
+Micro-stress
+------------
+Stress fields can be generated by combining the volume returned by TesselationWrapper to per-particle stress given by :yref:`bodyStressTensors`. Since the stress $\sigma$ from bodyStressTensor implies a division by the volume $V_b$ of the solid particle, one has to re-normalize it in order to obtain the micro-stress as defined in [Catalano2013a]_ (equation 39 therein), i.e. $\overline{\sigma}^k = \sigma^k \times V_b^k / V_{\sigma}^k$ where $V_{\sigma}^k$ is the volume assigned to particle $k$ in the tesselation. For instance:
+
+.. code-block:: python
+
+	#"b" being a body
+	TW=TesselationWrapper()
+	TW.computeVolumes()
+	s=bodyStressTensors()
+	stress = s[b.id]**4.*pi/3.*b.shape.radius**3/TW.volume(b.id)
+
+As any other value, the stress can be exported to a vtk file for display in Paraview using :yref:`VTKExporter`.
 
 ******************************
 Python specialties and tricks
